@@ -1,0 +1,42 @@
+name: Bug report
+description: Report a problem with Koffan
+labels: [bug]
+assignees: [PanSalut]
+body:
+  - type: textarea
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: How to reproduce?
+      placeholder: |
+        1.
+        2.
+        3.
+  - type: input
+    attributes:
+      label: Version
+      placeholder: e.g. v1.0.4
+  - type: dropdown
+    attributes:
+      label: Environment
+      options:
+        - production
+        - localhost
+  - type: dropdown
+    attributes:
+      label: Device
+      options:
+        - mobile
+        - desktop
+  - type: input
+    attributes:
+      label: Browser
+      placeholder: e.g. Chrome 120, Safari 17

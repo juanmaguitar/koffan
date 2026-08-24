@@ -1,0 +1,18 @@
+name: Feature request
+description: Suggest an idea for Koffan
+labels: [enhancement]
+assignees: [PanSalut]
+body:
+  - type: textarea
+    attributes:
+      label: What would you like?
+    validations:
+      required: true
+  - type: textarea
+    attributes:
+      label: Why do you need it?
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        > 👍 Before creating, check if [similar request exists](https://github.com/PanSalut/Koffan/issues?q=is%3Aissue+label%3Aenhancement) and vote instead!

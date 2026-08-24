@@ -1,0 +1,128 @@
+{{define "login"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title id="page-title">Login - Koffan</title>
+
+    <!-- Dark mode initialization (must run before body renders to prevent flash) -->
+    <script>
+        (function() {
+            function getThemePreference() {
+                const stored = localStorage.getItem('theme');
+                if (stored === 'dark' || stored === 'light') return stored;
+                return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            }
+            const theme = getThemePreference();
+            if (theme === 'dark') {
+                document.documentElement.classList.add('dark');
+            }
+        })();
+    </script>
+
+    <script src="{{asset "tailwind.min.js"}}"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#f9a8d4',
+                    }
+                }
+            }
+        }
+    </script>
+    <script defer src="{{asset "alpine.min.js"}}"></script>
+
+    <!-- i18n translations -->
+    <script>
+        window.translations = {{.Translations | toJSON}};
+        window.locales = {{.Locales | toJSON}};
+        window.defaultLang = {{.DefaultLang | toJSON}};
+
+        // Language: localStorage > server default
+        (function() {
+            const stored = localStorage.getItem('language');
+            if (stored && window.translations[stored]) {
+                window.currentLang = stored;
+            } else {
+                window.currentLang = window.defaultLang;
+            }
+            // Set html lang attribute
+            document.documentElement.lang = window.currentLang;
+        })();
+
+        // Translation helper function
+        function t(key, params) {
+            const lang = window.currentLang;
+            const keys = key.split('.');
+            let value = window.translations[lang];
+
+            for (const k of keys) {
+                if (value && typeof value === 'object' && k in value) {
+                    value = value[k];
+                } else {
+                    return key;
+                }
+            }
+
+            if (typeof value !== 'string') return key;
+
+            if (params) {
+                return value.replace(/\{\{(\w+)\}\}/g, (match, param) => {
+                    return params[param] !== undefined ? params[param] : match;
+                });
+            }
+            return value;
+        }
+
+        // Set page title on load
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('page-title').textContent = t('login.title');
+        });
+    </script>
+</head>
+<body class="bg-stone-50 dark:bg-stone-900 min-h-screen flex items-center justify-center px-4 transition-colors duration-200" x-data>
+    <div class="bg-white dark:bg-stone-800 p-8 rounded-2xl border border-stone-200 dark:border-stone-700 shadow-sm w-full max-w-sm">
+        <div class="text-center mb-8">
+            <img src="/static/koffan-logo.webp" alt="Koffan Logo" class="h-16 mx-auto mb-4">
+            <p class="text-sm text-stone-400 dark:text-stone-500 mt-1" x-text="t('login.subtitle')"></p>
+        </div>
+
+        {{if eq .Error "rate_limited"}}
+        <div class="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 px-4 py-3 rounded-xl mb-6 text-sm"
+             x-text="t('login.error_rate_limited')">
+        </div>
+        {{else if .Error}}
+        <div class="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 px-4 py-3 rounded-xl mb-6 text-sm" x-text="t('login.error_invalid')">
+        </div>
+        {{end}}
+
+        <form action="/login" method="POST">
+            <div class="mb-6">
+                <label for="password" class="block text-stone-600 dark:text-stone-400 text-sm font-medium mb-2" x-text="t('login.password')">
+                </label>
+                <input
+                    type="password"
+                    id="password"
+                    name="password"
+                    class="w-full border border-stone-200 dark:border-stone-600 dark:bg-stone-700 rounded-lg px-4 py-3 text-sm text-stone-700 dark:text-stone-100 placeholder:text-stone-400 dark:placeholder:text-stone-500 focus:outline-none focus:ring-2 focus:ring-pink-400 focus:border-transparent"
+                    :placeholder="t('login.password_placeholder')"
+                    autofocus
+                    required
+                >
+            </div>
+
+            <button
+                type="submit"
+                class="w-full bg-pink-400 hover:bg-pink-500 text-white font-medium py-3 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-400 focus:ring-offset-2 dark:focus:ring-offset-stone-800 transition-colors"
+                x-text="t('login.submit')"
+            >
+            </button>
+        </form>
+    </div>
+</body>
+</html>
+{{end}}

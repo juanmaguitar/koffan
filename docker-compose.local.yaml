@@ -1,0 +1,24 @@
+services:
+  shopping-list:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - APP_ENV=production
+      - APP_PASSWORD=${APP_PASSWORD:-shopping123}
+      - PORT=8080
+      - DB_PATH=/data/shopping.db
+      - WEBHOOK_URL=${WEBHOOK_URL:-}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET:-}
+      - WEBHOOK_EVENTS=${WEBHOOK_EVENTS:-}
+    volumes:
+      - shopping-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:$${PORT}/login || exit 1"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  shopping-data:

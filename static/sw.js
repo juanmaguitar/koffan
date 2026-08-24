@@ -1,0 +1,230 @@
+// Koffan Service Worker - Offline Support
+// __CACHE_VERSION__ and __ASSET_HASH__ are replaced at serve time by
+// handlers.ServeServiceWorker using the startup-computed asset hash.
+const CACHE_VERSION = 'koffan-__CACHE_VERSION__';
+const STATIC_CACHE = CACHE_VERSION + '-static';
+const DYNAMIC_CACHE = CACHE_VERSION + '-dynamic';
+
+// Pattern for list pages
+const LIST_PAGE_PATTERN = /^\/lists\/\d+$/;
+
+// Static assets to cache on install
+const STATIC_ASSETS = [
+    '/static/app.js?v=__ASSET_HASH__',
+    '/static/offline-storage.js?v=__ASSET_HASH__',
+    '/static/ui-scale.js?v=__ASSET_HASH__',
+    '/static/manifest.json',
+    '/static/koffan-logo.webp',
+    '/static/icon-192.png',
+    '/static/icon-512.png',
+    '/static/favicon.ico',
+    '/static/favicon-96.png',
+    '/static/apple-touch-icon.png',
+    '/static/tailwind.min.js?v=__ASSET_HASH__',
+    '/static/htmx.min.js?v=__ASSET_HASH__',
+    '/static/htmx-ws.js?v=__ASSET_HASH__',
+    '/static/alpine-collapse.min.js?v=__ASSET_HASH__',
+    '/static/alpine.min.js?v=__ASSET_HASH__',
+    '/static/sortable.min.js?v=__ASSET_HASH__'
+];
+
+// Install event - cache static assets and the app shell
+self.addEventListener('install', (event) => {
+    console.log('[SW] Installing service worker...');
+    event.waitUntil(
+        Promise.all([
+            caches.open(STATIC_CACHE)
+                .then(cache => {
+                    console.log('[SW] Caching static assets');
+                    return cache.addAll(STATIC_ASSETS).catch(err => {
+                        console.warn('[SW] Some static assets failed to cache:', err);
+                    });
+                }),
+            // Precache the app shell so the installed PWA can cold-start offline.
+            // Without this, launching offline hits the networkFirst fallback because
+            // "/" is otherwise only cached lazily after a successful online load.
+            caches.open(DYNAMIC_CACHE)
+                .then(cache => fetch('/', { credentials: 'same-origin' })
+                    .then(response => {
+                        // Skip login redirects and errors so we never cache a non-shell page.
+                        if (response.ok && !response.redirected) {
+                            return cache.put('/', response);
+                        }
+                    })
+                    .catch(err => console.warn('[SW] App shell precache failed:', err)))
+        ]).then(() => self.skipWaiting())
+    );
+});
+
+// Activate event - cleanup old caches
+self.addEventListener('activate', (event) => {
+    console.log('[SW] Activating service worker...');
+    event.waitUntil(
+        caches.keys()
+            .then(keys => {
+                return Promise.all(
+                    keys.filter(key => {
+                        return key.startsWith('koffan-') &&
+                               key !== STATIC_CACHE &&
+                               key !== DYNAMIC_CACHE;
+                    }).map(key => {
+                        console.log('[SW] Deleting old cache:', key);
+                        return caches.delete(key);
+                    })
+                );
+            })
+            .then(() => self.clients.claim())
+    );
+});
+
+// Fetch event - handle requests
+self.addEventListener('fetch', (event) => {
+    // Skip non-http(s) requests (chrome-extension, etc.)
+    if (!event.request.url.startsWith('http')) {
+        return;
+    }
+
+    const url = new URL(event.request.url);
+
+    // Skip WebSocket connections
+    if (url.pathname === '/ws') {
+        return;
+    }
+
+    // Skip non-GET requests (let them go through, app.js handles offline queueing)
+    if (event.request.method !== 'GET') {
+        return;
+    }
+
+    // Skip API data endpoint - always fetch fresh when online
+    if (url.pathname === '/api/data') {
+        event.respondWith(networkFirst(event.request));
+        return;
+    }
+
+    // Static assets - Cache First
+    if (url.pathname.startsWith('/static/')) {
+        event.respondWith(cacheFirst(event.request));
+        return;
+    }
+
+    // List pages (/lists/:id) - Network First with special offline handling
+    if (LIST_PAGE_PATTERN.test(url.pathname)) {
+        event.respondWith(listPageStrategy(event.request));
+        return;
+    }
+
+    // HTML pages (/, /login, /lists) - Network First with cache fallback
+    if (event.request.headers.get('accept')?.includes('text/html')) {
+        event.respondWith(networkFirst(event.request));
+        return;
+    }
+
+    // Stats and other API - Network First
+    if (url.pathname === '/stats' || url.pathname.startsWith('/sections/') || url.pathname.startsWith('/items/')) {
+        event.respondWith(networkFirst(event.request));
+        return;
+    }
+
+    // Default - Network First
+    event.respondWith(networkFirst(event.request));
+});
+
+// Cache First strategy - for static assets
+async function cacheFirst(request) {
+    const cached = await caches.match(request);
+    if (cached) {
+        return cached;
+    }
+
+    try {
+        const response = await fetch(request);
+        if (response.ok) {
+            const cache = await caches.open(STATIC_CACHE);
+            cache.put(request, response.clone());
+        }
+        return response;
+    } catch (error) {
+        console.warn('[SW] Cache first failed:', request.url);
+        // Return a simple offline page for HTML requests
+        if (request.headers.get('accept')?.includes('text/html')) {
+            return new Response('<html><body style="font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#fafaf9"><div style="text-align:center"><h1 style="color:#78716c">Koffan Offline</h1><p style="color:#a8a29e">Check your connection</p></div></body></html>', {
+                headers: { 'Content-Type': 'text/html' }
+            });
+        }
+        throw error;
+    }
+}
+
+// Network First strategy - for dynamic content
+async function networkFirst(request) {
+    try {
+        const response = await fetch(request);
+        // Skip redirected responses (e.g. an expired session bouncing to /login) so we
+        // never cache a login page under the requested URL and poison the offline shell.
+        if (response.ok && !response.redirected) {
+            const cache = await caches.open(DYNAMIC_CACHE);
+            cache.put(request, response.clone());
+        }
+        return response;
+    } catch (error) {
+        const cached = await caches.match(request);
+        if (cached) {
+            return cached;
+        }
+
+        // Return offline fallback for HTML
+        if (request.headers.get('accept')?.includes('text/html')) {
+            // Try to return cached main page
+            const mainPage = await caches.match('/');
+            if (mainPage) {
+                return mainPage;
+            }
+            return new Response('<html><body style="font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#fafaf9"><div style="text-align:center"><h1 style="color:#78716c">Koffan Offline</h1><p style="color:#a8a29e">Check your connection</p></div></body></html>', {
+                headers: { 'Content-Type': 'text/html' }
+            });
+        }
+
+        throw error;
+    }
+}
+
+// List Page strategy - Network First with list-specific fallback
+async function listPageStrategy(request) {
+    try {
+        const response = await fetch(request);
+        // Skip redirected responses (e.g. an expired session bouncing to /login) so we
+        // never cache a login page under the list URL.
+        if (response.ok && !response.redirected) {
+            const cache = await caches.open(DYNAMIC_CACHE);
+            cache.put(request, response.clone());
+        }
+        return response;
+    } catch (error) {
+        // Try to return cached version of this list
+        const cached = await caches.match(request);
+        if (cached) {
+            return cached;
+        }
+
+        // List not cached - show offline message
+        return new Response('<html><body style="font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#fafaf9"><div style="text-align:center"><h1 style="color:#78716c">Koffan Offline</h1><p style="color:#a8a29e">This list is not saved offline.</p><a href="/" style="color:#f472b6;text-decoration:none">Back to home page</a></div></body></html>', {
+            headers: { 'Content-Type': 'text/html' }
+        });
+    }
+}
+
+// Listen for messages from the app
+self.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'SKIP_WAITING') {
+        self.skipWaiting();
+    }
+
+    if (event.data && event.data.type === 'CLEAR_CACHE') {
+        event.waitUntil(
+            caches.keys().then(keys => {
+                return Promise.all(keys.map(key => caches.delete(key)));
+            })
+        );
+    }
+});

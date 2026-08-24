@@ -1,0 +1,21 @@
+spec:
+  name: koffan
+  services:
+    - name: web
+      dockerfile_path: Dockerfile
+      github:
+        repo: PanSalut/Koffan
+        branch: main
+        deploy_on_push: true
+      http_port: 3000
+      instance_size_slug: apps-s-1vcpu-0.5gb
+      instance_count: 1
+      routes:
+        - path: /
+      envs:
+        - key: APP_ENV
+          value: production
+        - key: APP_PASSWORD
+          type: SECRET
+        - key: DB_PATH
+          value: /data/shopping.db

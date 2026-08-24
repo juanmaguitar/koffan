@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Koffan Shopping List</title>
+
+    <!-- Favicon & PWA -->
+    <link rel="icon" type="image/png" href="/static/favicon-96.png" sizes="96x96">
+    <link rel="icon" type="image/png" href="/static/icon-192.png" sizes="192x192">
+    <link rel="icon" href="/static/favicon.ico" sizes="48x48">
+    <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+    <link rel="manifest" href="/static/manifest.json" crossorigin="use-credentials">
+    <meta name="theme-color" content="#f9a8d4">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+    <!-- Dark mode initialization (must run before body renders to prevent flash) -->
+    <script>
+        (function() {
+            function getThemePreference() {
+                const stored = localStorage.getItem('theme');
+                if (stored === 'dark' || stored === 'light') return stored;
+                return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+            }
+            const theme = getThemePreference();
+            if (theme === 'dark') {
+                document.documentElement.classList.add('dark');
+            }
+            window.getThemePreference = getThemePreference;
+        })();
+    </script>
+
+    <!-- UI scale initialization (must run before body renders to prevent flash) -->
+    <script src="{{asset "ui-scale.js"}}"></script>
+    <script>
+        (function() {
+            function apply(resolved) {
+                document.documentElement.style.fontSize = window.UIScale.scaleToFontSize(resolved);
+                document.documentElement.setAttribute('data-ui-scale', resolved);
+            }
+            window.getUIScale = function() {
+                var mod = window.UIScale;
+                return mod ? mod.resolveScale(localStorage.getItem('uiScale')) : 'normal';
+            };
+            window.setUIScale = function(scale) {
+                var mod = window.UIScale;
+                if (!mod) return;
+                var resolved = mod.resolveScale(scale);
+                localStorage.setItem('uiScale', resolved);
+                apply(resolved);
+            };
+            if (window.UIScale) {
+                apply(window.getUIScale());
+            }
+        })();
+    </script>
+
+    <!-- i18n translations -->
+    <script>
+        window.translations = {{.Translations | toJSON}};
+        window.locales = {{.Locales | toJSON}};
+        window.defaultLang = {{.DefaultLang | toJSON}};
+
+        // Language: localStorage > server default
+        (function() {
+            const stored = localStorage.getItem('language');
+            if (stored && window.translations[stored]) {
+                window.currentLang = stored;
+            } else {
+                window.currentLang = window.defaultLang;
+            }
+            // Set page title based on language
+            document.title = window.translations[window.currentLang]?.list?.title || 'Koffan Shopping List';
+            // Also set html lang attribute
+            document.documentElement.lang = window.currentLang;
+        })();
+
+        // Translation helper function
+        function t(key, params) {
+            const lang = window.currentLang;
+            const keys = key.split('.');
+            let value = window.translations[lang];
+
+            for (const k of keys) {
+                if (value && typeof value === 'object' && k in value) {
+                    value = value[k];
+                } else {
+                    return key;
+                }
+            }
+
+            if (typeof value !== 'string') return key;
+
+            // Replace {{ "{{" }}param{{ "}}" }} placeholders
+            if (params) {
+                return value.replace(/\{\{(\w+)\}\}/g, (match, param) => {
+                    return params[param] !== undefined ? params[param] : match;
+                });
+            }
+            return value;
+        }
+
+        // Language change helper
+        function changeLanguage(lang) {
+            localStorage.setItem('language', lang);
+            document.cookie = 'lang=' + lang + ';path=/;max-age=31536000;SameSite=Lax';
+            window.location.reload();
+        }
+
+        // Theme change helper
+        function setTheme(theme) {
+            if (theme === 'dark') {
+                document.documentElement.classList.add('dark');
+                localStorage.setItem('theme', 'dark');
+                document.querySelector('meta[name="theme-color"]').content = '#1c1917';
+            } else if (theme === 'light') {
+                document.documentElement.classList.remove('dark');
+                localStorage.setItem('theme', 'light');
+                document.querySelector('meta[name="theme-color"]').content = '#f9a8d4';
+            } else {
+                // 'system' - remove stored preference
+                localStorage.removeItem('theme');
+                const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                document.documentElement.classList.toggle('dark', prefersDark);
+                document.querySelector('meta[name="theme-color"]').content = prefersDark ? '#1c1917' : '#f9a8d4';
+            }
+        }
+
+        // Listen for system preference changes
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+            if (!localStorage.getItem('theme')) {
+                setTheme('system');
+            }
+        });
+    </script>
+
+    <!-- Tailwind CSS -->
+    <script src="{{asset "tailwind.min.js"}}"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#f9a8d4',
+                        uncertain: '#fef3c7',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- HTMX -->
+    <script src="{{asset "htmx.min.js"}}"></script>
+    <script src="{{asset "htmx-ws.js"}}"></script>
+
+    <!-- Alpine.js + Collapse plugin (collapse must load before Alpine) -->
+    <script src="{{asset "alpine-collapse.min.js"}}"></script>
+    <script defer src="{{asset "alpine.min.js"}}"></script>
+
+    <!-- SortableJS for mobile drag-and-drop -->
+    <script src="{{asset "sortable.min.js"}}"></script>
+
+    <style>
+        :root {
+            --app-viewport-height: 100vh;
+            --mobile-sheet-offset: 1rem;
+        }
+
+        [x-cloak] { display: none !important; }
+        .htmx-request .htmx-indicator { display: inline-block; }
+        .htmx-indicator { display: none; }
+
+        /* HTMX animations */
+        .htmx-added {
+            animation: slideIn 0.25s ease-out;
+        }
+        .htmx-swapping {
+            opacity: 0;
+            transition: opacity 0.15s ease-out;
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-8px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Item animations */
+        .item-enter {
+            animation: itemEnter 0.3s ease-out;
+        }
+        @keyframes itemEnter {
+            from {
+                opacity: 0;
+                transform: translateX(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        .item-exit {
+            animation: itemExit 0.2s ease-in forwards;
+        }
+        @keyframes itemExit {
+            to {
+                opacity: 0;
+                transform: translateX(20px) scale(0.95);
+            }
+        }
+
+        /* Checkbox pulse */
+        .checkbox-pulse {
+            animation: pulse 0.3s ease-out;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+            100% { transform: scale(1); }
+        }
+
+        /* Section fade */
+        .section-fade {
+            animation: sectionFade 0.3s ease-out;
+        }
+        @keyframes sectionFade {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Smooth list refresh - prevents flash */
+        #sections-list {
+            transition: opacity 0.15s ease-out;
+        }
+        #sections-list.htmx-request {
+            opacity: 0.7;
+        }
+
+        /* Disable animations during move */
+        .moving-item {
+            animation: none !important;
+        }
+
+        /* Prevent Chrome Android PWA native pull-to-refresh from interfering with custom PTR */
+        html, body {
+            overscroll-behavior-y: none;
+        }
+
+        /* Prevent zoom on touch devices */
+        * {
+            touch-action: manipulation;
+        }
+
+        /* Prevent iOS zoom on input focus (requires 16px minimum), while still
+           scaling up with the UI size setting at larger presets */
+        input, textarea, select {
+            font-size: max(1rem, 16px) !important;
+        }
+
+        /* Logo counter-scaling: the rest of the UI scales up with the UI size
+           setting, but the logo should shrink at larger presets so it stops
+           crowding the header text (e.g. the list name on the list page).
+           --logo-scale is multiplied into rem-based heights: at large/huge it
+           dips below the level that would merely keep the logo constant, making
+           it visibly smaller than at Normal. */
+        :root { --logo-scale: 1; }
+        html[data-ui-scale="large"] { --logo-scale: 0.82; }
+        html[data-ui-scale="huge"]  { --logo-scale: 0.7; }
+        .app-logo-home {
+            height: calc(3rem * var(--logo-scale));
+        }
+        .app-logo-header {
+            height: calc(2rem * var(--logo-scale));
+        }
+        @media (min-width: 768px) {
+            .app-logo-header {
+                height: calc(2.5rem * var(--logo-scale));
+            }
+        }
+
+        /* Pull to refresh */
+        .pull-to-refresh-spinner {
+            position: fixed;
+            left: 50%;
+            top: 0;
+            transform: translate(-50%, -100%);
+            width: 36px;
+            height: 36px;
+            background: white;
+            border-radius: 50%;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            opacity: 0;
+            transition: opacity 0.2s ease-out;
+            pointer-events: none;
+        }
+        .dark .pull-to-refresh-spinner {
+            background: #292524;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+        }
+        .pull-to-refresh-spinner.visible {
+            opacity: 1;
+        }
+        .pull-to-refresh-spinner svg {
+            width: 20px;
+            height: 20px;
+            color: #f472b6;
+            transition: transform 0.1s ease-out;
+        }
+        .pull-to-refresh-spinner.refreshing svg {
+            animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Refresh overlay */
+        .refresh-overlay {
+            position: fixed;
+            inset: 0;
+            background: #fafaf9;
+            z-index: 90;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s ease-out;
+        }
+        .dark .refresh-overlay {
+            background: #1c1917;
+        }
+        .refresh-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .refresh-overlay.fade-out {
+            opacity: 0;
+        }
+
+        /* Safe area for bottom navigation on notched devices */
+        .safe-area-pb {
+            padding-bottom: env(safe-area-inset-bottom, 0);
+        }
+
+        @media (max-width: 767px) {
+            .mobile-sheet {
+                max-height: calc(var(--app-viewport-height, 100vh) - var(--mobile-sheet-offset));
+            }
+
+            .mobile-sheet-scroll {
+                overflow-y: auto;
+                padding-bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px)) !important;
+            }
+        }
+
+        /* Custom scrollbar for dark mode */
+        .dark ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .dark ::-webkit-scrollbar-track {
+            background: #292524;
+        }
+        .dark ::-webkit-scrollbar-thumb {
+            background: #57534e;
+            border-radius: 4px;
+        }
+        .dark ::-webkit-scrollbar-thumb:hover {
+            background: #78716c;
+        }
+        /* Firefox */
+        .dark * {
+            scrollbar-color: #57534e #292524;
+            scrollbar-width: thin;
+        }
+
+        /* Drag-and-drop states */
+        [data-item-id] {
+            -webkit-touch-callout: none;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        .sortable-ghost {
+            opacity: 0.5;
+            background: #fce7f3 !important;
+        }
+        .dark .sortable-ghost {
+            background: rgba(244, 114, 182, 0.3) !important;
+        }
+        .sortable-chosen {
+            background: #fdf2f8 !important;
+            border-left: 3px solid #ec4899 !important;
+        }
+        .dark .sortable-chosen {
+            background: rgba(244, 114, 182, 0.15) !important;
+            border-left: 3px solid #ec4899 !important;
+        }
+        .sortable-drag {
+            opacity: 0 !important;
+        }
+        body.is-dragging {
+            overflow: hidden;
+            touch-action: none;
+            cursor: grabbing !important;
+        }
+        body.is-dragging * {
+            cursor: grabbing !important;
+        }
+        .drag-handle {
+            opacity: 0.4;
+            transition: opacity 0.2s ease;
+        }
+        .drag-handle:active {
+            opacity: 1;
+        }
+        .is-dragging * {
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        .drag-drop-target {
+            border: 2px dashed #d6d3d1 !important;
+            background: white !important;
+        }
+        .dark .drag-drop-target {
+            border-color: #57534e !important;
+            background: #292524 !important;
+        }
+        .drag-drop-target .completed-wrapper,
+        .drag-drop-target .section-counter,
+        .drag-drop-target .flex.items-center.gap-2.flex-shrink-0 {
+            display: none !important;
+        }
+        .drag-drop-target .items-sortable {
+            min-height: 48px;
+            position: relative;
+        }
+        .drag-drop-target .items-sortable::before {
+            content: attr(data-drop-hint);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 48px;
+            color: #a8a29e;
+            font-size: 0.8rem;
+        }
+        .dark .drag-drop-target .items-sortable::before {
+            color: #78716c;
+        }
+        .drag-drop-target .items-sortable:has(.sortable-ghost)::before {
+            display: none;
+        }
+        .drag-drop-target .items-sortable > [data-item-id] ~ .items-sortable::before {
+            display: none;
+        }
+        .drag-drop-target h3 {
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-stone-900 min-h-screen transition-colors duration-200">
+    <!-- Refresh overlay -->
+    <div id="refresh-overlay" class="refresh-overlay"></div>
+
+    <!-- Pull to refresh indicator -->
+    <div id="pull-to-refresh" class="pull-to-refresh-spinner">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+        </svg>
+    </div>
+
+    {{embed}}
+
+    <script src="{{asset "viewport.js"}}"></script>
+    <script src="{{asset "offline-storage.js"}}"></script>
+    <script src="{{asset "app.js"}}"></script>
+    <script>
+        window.ViewportHeight?.initViewportHeightSync(window, document);
+    </script>
+    <script>
+        // Register Service Worker with update handling
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('{{asset "sw.js"}}', { scope: '/' })
+                .then(reg => {
+                    console.log('[App] Service Worker registered:', reg.scope);
+                    // Force update check
+                    reg.update();
+                    // Listen for new SW and activate immediately
+                    reg.addEventListener('updatefound', () => {
+                        const newWorker = reg.installing;
+                        newWorker.addEventListener('statechange', () => {
+                            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                // New SW installed, tell it to skip waiting
+                                newWorker.postMessage({ type: 'SKIP_WAITING' });
+                            }
+                        });
+                    });
+                })
+                .catch(err => console.error('[App] Service Worker registration failed:', err));
+
+            // Reload page when new SW takes control. Skip the very first claim
+            // (page was loaded uncontrolled, its content is already fresh) and
+            // defer the reload while the user is typing so unsubmitted input
+            // is not lost on deploy.
+            let wasControlled = !!navigator.serviceWorker.controller;
+            let refreshing = false;
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (!wasControlled) {
+                    wasControlled = true;
+                    return;
+                }
+                if (refreshing) return;
+                refreshing = true;
+                const el = document.activeElement;
+                const isTyping = el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') && el.value;
+                if (isTyping) {
+                    document.addEventListener('visibilitychange', function onHidden() {
+                        if (document.hidden) {
+                            document.removeEventListener('visibilitychange', onHidden);
+                            window.location.reload();
+                        }
+                    });
+                } else {
+                    window.location.reload();
+                }
+            });
+
+            // Clear SW caches on logout so the cached authenticated app shell
+            // is not served offline to the next user of a shared device.
+            document.addEventListener('submit', (e) => {
+                const form = e.target;
+                if (form.matches?.('form[action="/logout"]')) {
+                    navigator.serviceWorker.controller?.postMessage({ type: 'CLEAR_CACHE' });
+                }
+            }, true);
+        }
+    </script>
+</body>
+</html>
