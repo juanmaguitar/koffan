@@ -22,6 +22,34 @@ const (
 	MaxDescriptionLength = 500
 )
 
+// defaultSectionName returns the name used for the implicit section that backs
+// every list. Sections are hidden in this fork, but items still hang off one
+// (items.section_id is NOT NULL), so each list keeps exactly one.
+func defaultSectionName() string {
+	name := i18n.Get(i18n.GetDefaultLang(), "sections.default")
+	if name == "sections.default" {
+		name = "General"
+	}
+	return name
+}
+
+// ensureDefaultSection guarantees the list has at least one section to hold
+// items, creating the implicit one if needed. Returns the sections to render.
+func ensureDefaultSection(listID int64) ([]db.Section, error) {
+	sections, err := db.GetSectionsByList(listID)
+	if err != nil {
+		return nil, err
+	}
+	if len(sections) > 0 {
+		return sections, nil
+	}
+
+	if _, err := db.CreateSectionForList(listID, defaultSectionName()); err != nil {
+		return nil, err
+	}
+	return db.GetSectionsByList(listID)
+}
+
 // GetListsPage returns the homepage with all lists
 func GetListsPage(c *fiber.Ctx) error {
 	lists, err := db.GetAllLists()
@@ -61,7 +89,8 @@ func GetListView(c *fiber.Ctx) error {
 	// Set this list as active
 	db.SetActiveList(id)
 
-	sections, err := db.GetSectionsByList(id)
+	// Backfills the implicit section for lists created before this fork.
+	sections, err := ensureDefaultSection(id)
 	if err != nil {
 		return sendError(c, 500, "error.fetch_failed")
 	}
@@ -130,6 +159,12 @@ func CreateList(c *fiber.Ctx) error {
 	list, err := db.CreateList(name, icon)
 	if err != nil {
 		return sendError(c, 500, "error.create_failed")
+	}
+
+	// A list with no section cannot hold items, and the add bar would have
+	// nowhere to post to.
+	if _, err := ensureDefaultSection(list.ID); err != nil {
+		log.Printf("Error creating default section for list %d: %v", list.ID, err)
 	}
 
 	// Broadcast to WebSocket clients

@@ -361,6 +361,24 @@
             }
         }
 
+        /* Add bar rides on top of the on-screen keyboard. position:fixed is
+           relative to the layout viewport, so lift it by whatever the keyboard
+           covers (--app-keyboard-inset, kept in sync by viewport.js). */
+        .keyboard-anchored {
+            bottom: var(--app-keyboard-inset, 0px);
+            transition: bottom 0.1s ease-out;
+        }
+
+        /* No safe-area padding while the keyboard is up: the home indicator is
+           hidden behind it and the gap would just waste a row of pixels. */
+        .mobile-add-bar-pb {
+            padding-bottom: calc(0.625rem + env(safe-area-inset-bottom, 0px));
+        }
+
+        :root[data-keyboard-open="true"] .mobile-add-bar-pb {
+            padding-bottom: 0.625rem;
+        }
+
         /* Custom scrollbar for dark mode */
         .dark ::-webkit-scrollbar {
             width: 8px;

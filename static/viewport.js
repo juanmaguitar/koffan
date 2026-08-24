@@ -21,13 +21,32 @@
         return 0;
     }
 
+    // How many pixels at the bottom of the layout viewport are covered by the
+    // on-screen keyboard. Position:fixed is relative to the layout viewport, so
+    // a bar pinned to bottom:0 hides behind the keyboard without this offset.
+    function getKeyboardInset(win) {
+        const vv = win?.visualViewport;
+        const layoutHeight = win?.innerHeight;
+
+        if (!vv || typeof layoutHeight !== 'number' || typeof vv.height !== 'number') {
+            return 0;
+        }
+
+        const inset = layoutHeight - vv.height - (vv.offsetTop || 0);
+        return inset > 0 ? inset : 0;
+    }
+
     function syncViewportHeight(win, doc) {
         const height = Math.round(getVisibleViewportHeight(win));
         if (!height || !doc?.documentElement?.style?.setProperty) {
             return height;
         }
 
+        const keyboardInset = Math.round(getKeyboardInset(win));
+
         doc.documentElement.style.setProperty('--app-viewport-height', `${height}px`);
+        doc.documentElement.style.setProperty('--app-keyboard-inset', `${keyboardInset}px`);
+        doc.documentElement.setAttribute?.('data-keyboard-open', keyboardInset > 0 ? 'true' : 'false');
         return height;
     }
 
@@ -58,6 +77,7 @@
 
     return {
         getVisibleViewportHeight,
+        getKeyboardInset,
         syncViewportHeight,
         initViewportHeightSync
     };

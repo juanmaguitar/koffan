@@ -2670,15 +2670,23 @@ function shoppingList() {
             }
         },
 
-        // Clear the desktop add form after a submit, keeping the section selected.
+        // Clear the add form after a submit. Used by both the desktop form and the
+        // mobile add bar, so section_id may be a hidden input rather than a select.
         _resetDesktopAddForm(form) {
-            const sectionValue = form.querySelector('select[name="section_id"]').value;
-            form.querySelector('input[name="name"]').value = '';
+            const nameInput = form.querySelector('input[name="name"]');
+            if (nameInput) nameInput.value = '';
+
             const descInput = form.querySelector('input[name="description"]');
             if (descInput) descInput.value = '';
-            form.querySelector('select[name="section_id"]').value = sectionValue;
+
             this.addItemQuantity = 0;
-            setTimeout(() => form.querySelector('input[name="name"]')?.focus(), 50);
+
+            // On mobile the input is already focused and the keyboard is up.
+            // Calling focus() again would be a no-op at best and can dismiss the
+            // keyboard at worst, so only reach for it when focus went elsewhere.
+            if (nameInput && document.activeElement !== nameInput) {
+                setTimeout(() => nameInput.focus(), 50);
+            }
         },
 
         // Mobile add item form (modal with add-more toggle)
