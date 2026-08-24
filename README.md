@@ -1,3 +1,16 @@
+> **Nota: esto es un fork.**
+> El original es [PanSalut/Koffan](https://github.com/PanSalut/Koffan) y todo el mérito es suyo.
+> Esta rama (`juanma`) adapta la interfaz a mi forma de usarla:
+>
+> - **Barra de alta fija en móvil** en lugar del botón flotante y su hoja modal. Sube por
+>   encima del teclado, y se añade con Enter sin perder el foco: escribes, Enter, repites.
+> - **Listas planas, sin secciones.** Cada lista lleva una única sección implícita que no se
+>   ve. Desaparecen el desplegable al añadir, la gestión de secciones y "mover a sección".
+> - **Sin cantidad ni nota** al crear ni al editar. Los productos que ya las tuvieran las
+>   siguen mostrando.
+>
+> El esquema de base de datos es el de upstream, así que se puede rebasar contra sus tags.
+
 <p align="center">
   <img src="static/koffan-logo.webp" alt="Koffan Logo" width="400">
 </p>
