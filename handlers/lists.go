@@ -57,10 +57,16 @@ func GetListsPage(c *fiber.Ctx) error {
 		return sendError(c, 500, "error.fetch_failed")
 	}
 
+	closedLists, err := db.GetClosedLists()
+	if err != nil {
+		return sendError(c, 500, "error.fetch_failed")
+	}
+
 	templates, _ := db.GetAllTemplates()
 
 	return c.Render("home", fiber.Map{
 		"Lists":        lists,
+		"ClosedLists":  closedLists,
 		"Templates":    templates,
 		"Translations": i18n.GetAllLocales(),
 		"Locales":      i18n.AvailableLocales(),
@@ -241,6 +247,97 @@ func DeleteList(c *fiber.Ctx) error {
 
 	// Return empty string (HTMX will remove the element)
 	return c.SendString("")
+}
+
+// CloseList finishes a shopping trip: the list is archived into the history and
+// a fresh one takes its place, keeping the same name, icon and position so the
+// home page looks unchanged.
+func CloseList(c *fiber.Ctx) error {
+	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return sendError(c, 400, "error.invalid_id")
+	}
+
+	list, err := db.GetListByID(id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return sendError(c, 404, "error.not_found")
+		}
+		return sendError(c, 500, "error.fetch_failed")
+	}
+	if list.IsClosed() {
+		return sendError(c, 409, "list.already_closed")
+	}
+
+	if err := db.CloseList(id); err != nil {
+		return sendError(c, 500, "error.update_failed")
+	}
+
+	// The replacement is created after closing, so ListNameExists no longer
+	// sees the old one and the shared name is free.
+	replacement, err := db.CreateListAt(list.Name, list.Icon, list.SortOrder)
+	if err != nil {
+		// Leaving the trip closed with no replacement would strand the user on
+		// an empty home page, so put it back.
+		if reopenErr := db.ReopenList(id); reopenErr != nil {
+			log.Printf("Error reopening list %d after failed replacement: %v", id, reopenErr)
+		}
+		return sendError(c, 500, "error.create_failed")
+	}
+
+	if _, err := ensureDefaultSection(replacement.ID); err != nil {
+		log.Printf("Error creating default section for list %d: %v", replacement.ID, err)
+	}
+	db.SetActiveList(replacement.ID)
+
+	BroadcastUpdate("list_closed", map[string]int64{"id": id, "replacement_id": replacement.ID})
+
+	return c.JSON(fiber.Map{
+		"closed_id":      id,
+		"replacement_id": replacement.ID,
+	})
+}
+
+// ReopenList brings a closed list back to the home page.
+func ReopenList(c *fiber.Ctx) error {
+	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return sendError(c, 400, "error.invalid_id")
+	}
+
+	list, err := db.GetListByID(id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return sendError(c, 404, "error.not_found")
+		}
+		return sendError(c, 500, "error.fetch_failed")
+	}
+
+	// Closing always leaves an open replacement holding the same name, so a
+	// clash here is the normal case, not the exception. When that replacement
+	// is still empty the user is undoing a close, and dropping it is exactly
+	// what they mean. Once it has items, discarding it would lose their work.
+	clash, err := db.GetOpenListByName(list.Name, id)
+	if err != nil && err != sql.ErrNoRows {
+		return sendError(c, 500, "error.check_failed")
+	}
+	if clash != nil {
+		if clash.Stats.TotalItems > 0 {
+			return sendError(c, 409, "archive.reopen_blocked")
+		}
+		if err := db.DeleteList(clash.ID); err != nil {
+			return sendError(c, 500, "error.delete_failed")
+		}
+		BroadcastUpdate("list_deleted", map[string]int64{"id": clash.ID})
+	}
+
+	if err := db.ReopenList(id); err != nil {
+		return sendError(c, 500, "error.update_failed")
+	}
+	db.SetActiveList(id)
+
+	BroadcastUpdate("list_reopened", map[string]int64{"id": id})
+	return c.JSON(fiber.Map{"id": id})
 }
 
 // SetActiveList sets a list as active

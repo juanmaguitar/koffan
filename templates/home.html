@@ -98,6 +98,15 @@
                                     <span x-text="t('actions.move_down')"></span>
                                 </button>
                                 <button
+                                    @click="showActions = false; closeList({{$list.ID}}, '{{$list.Name | js}}')"
+                                    class="w-full px-4 py-2.5 text-left text-sm text-stone-700 dark:text-stone-200 hover:bg-stone-50 dark:hover:bg-stone-700 flex items-center gap-3"
+                                >
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path>
+                                    </svg>
+                                    <span x-text="t('archive.close_list')"></span>
+                                </button>
+                                <button
                                     @click="showActions = false; editList({{$list.ID}}, '{{$list.Name | js}}', '{{$list.Icon | js}}')"
                                     class="w-full px-4 py-2.5 text-left text-sm text-stone-700 dark:text-stone-200 hover:bg-stone-50 dark:hover:bg-stone-700 flex items-center gap-3"
                                 >
@@ -225,6 +234,59 @@
             </div>
         </div>
         {{end}}
+        {{end}}
+
+        <!-- Shopping history: closed trips, newest first -->
+        {{if .ClosedLists}}
+        <div class="mt-8" x-data="{ openHistory: false }">
+            <button
+                @click="openHistory = !openHistory"
+                class="w-full flex items-center gap-2 text-left mb-3 text-stone-500 dark:text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 transition-colors"
+            >
+                <svg class="w-4 h-4 transition-transform" :class="openHistory && 'rotate-90'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                </svg>
+                <span class="text-sm font-medium" x-text="t('archive.title')"></span>
+                <span class="text-xs text-stone-400 dark:text-stone-500">({{len .ClosedLists}})</span>
+            </button>
+
+            <div x-show="openHistory" x-cloak x-collapse class="grid gap-2">
+                {{range $closed := .ClosedLists}}
+                <div id="home-list-{{$closed.ID}}" class="bg-white dark:bg-stone-800 rounded-xl border border-stone-200 dark:border-stone-700 p-3 flex items-center gap-3 opacity-90">
+                    <div class="w-9 h-9 rounded-lg bg-stone-50 dark:bg-stone-700 flex items-center justify-center flex-shrink-0 text-lg">{{$closed.Icon}}</div>
+
+                    <a href="/lists/{{$closed.ID}}" class="flex-1 min-w-0">
+                        <p class="font-medium text-stone-700 dark:text-stone-200 truncate">{{$closed.Name}}</p>
+                        <p class="text-xs text-stone-400 dark:text-stone-500">
+                            <span x-text="t('archive.closed_on', {date: '{{$closed.ClosedOn}}'})"></span>
+                            &middot;
+                            <span x-text="t('archive.bought_of', {completed: {{$closed.Stats.CompletedItems}}, total: {{$closed.Stats.TotalItems}}})"></span>
+                        </p>
+                    </a>
+
+                    <button
+                        @click="reopenList({{$closed.ID}}, '{{$closed.Name | js}}')"
+                        class="p-2 text-stone-400 hover:text-emerald-500 dark:text-stone-500 dark:hover:text-emerald-400 rounded-lg transition-colors"
+                        :title="t('archive.reopen')"
+                    >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                        </svg>
+                    </button>
+
+                    <button
+                        @click="deleteClosedList({{$closed.ID}}, '{{$closed.Name | js}}', '{{$closed.ClosedOn}}')"
+                        class="p-2 text-stone-400 hover:text-red-500 dark:text-stone-500 dark:hover:text-red-400 rounded-lg transition-colors"
+                        :title="t('common.delete')"
+                    >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                        </svg>
+                    </button>
+                </div>
+                {{end}}
+            </div>
+        </div>
         {{end}}
     </div>
 
@@ -705,8 +767,11 @@ function homePage() {
         clearDatabaseInput: '',
         clearDatabaseLoading: false,
 
-        t(key) {
-            return window.t ? window.t(key) : key;
+        // Forwards params so {{ "{{" }}placeholder{{ "}}" }} interpolation works. Callers that
+        // still do their own .replace() keep working: with no params the raw
+        // string comes back untouched.
+        t(key, params) {
+            return window.t ? window.t(key, params) : key;
         },
 
         async init() {
@@ -989,6 +1054,76 @@ function homePage() {
                     el.parentNode.insertBefore(el, sibling);
                 }
                 console.error('Failed to move list:', error);
+            }
+        },
+
+        // Finish a shopping trip from the home page: it moves to the history and
+        // a fresh list with the same name and position takes its place.
+        async closeList(id, name) {
+            if (!this.isOnline) {
+                window.Toast?.show(this.t('offline.action_blocked'), 'warning');
+                return;
+            }
+
+            if (!confirm(this.t('archive.close_confirm', { name }))) return;
+
+            try {
+                const response = await fetch(`/lists/${id}/close`, { method: 'POST' });
+                if (!response.ok) {
+                    window.Toast?.show(await response.text(), 'warning');
+                    return;
+                }
+                // The grid, the history and the counters all change at once.
+                window.location.reload();
+            } catch (error) {
+                console.error('Failed to close list:', error);
+            }
+        },
+
+        // Bring a closed trip back to the home page.
+        async reopenList(id, name) {
+            if (!this.isOnline) {
+                window.Toast?.show(this.t('offline.action_blocked'), 'warning');
+                return;
+            }
+
+            if (!confirm(this.t('archive.reopen_confirm', { name }))) return;
+
+            try {
+                const response = await fetch(`/lists/${id}/reopen`, { method: 'POST' });
+                if (!response.ok) {
+                    window.Toast?.show(await response.text(), 'warning');
+                    return;
+                }
+                window.location.reload();
+            } catch (error) {
+                console.error('Failed to reopen list:', error);
+            }
+        },
+
+        // Delete a closed trip for good. Its items go with it (ON DELETE CASCADE).
+        async deleteClosedList(id, name, date) {
+            if (!this.isOnline) {
+                window.Toast?.show(this.t('offline.action_blocked'), 'warning');
+                return;
+            }
+
+            const question = this.t('archive.delete_confirm', { name, date });
+            if (!confirm(question)) return;
+
+            try {
+                const response = await fetch(`/lists/${id}`, { method: 'DELETE' });
+                if (response.ok) {
+                    const el = document.getElementById(`home-list-${id}`);
+                    if (el) {
+                        Alpine.destroyTree(el);
+                        el.remove();
+                    }
+                } else {
+                    window.Toast?.show(await response.text(), 'warning');
+                }
+            } catch (error) {
+                console.error('Failed to delete closed list:', error);
             }
         },
 

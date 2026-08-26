@@ -29,7 +29,8 @@
     "bought": "Comprado",
     "name_exists": "Ya existe una lista con este nombre",
     "show_completed": "Mostrar artículos comprados",
-    "hide_completed": "Ocultar artículos comprados"
+    "hide_completed": "Ocultar artículos comprados",
+    "already_closed": "Esta lista ya está cerrada"
   },
   "items": {
     "what_to_buy": "¿Qué comprar?",
@@ -184,6 +185,22 @@
     "confirm_delete": "¿Eliminar \"{{name}}\" del historial?",
     "confirm_delete_batch": "¿Eliminar {{count}} productos seleccionados del historial?",
     "deleted": "{{count}} productos eliminados"
+  },
+  "archive": {
+    "close_list": "Cerrar compra",
+    "close_confirm": "¿Cerrar la compra de \"{{name}}\"? Se guarda en el historial y se abre una lista nueva vacía.",
+    "closed_ok": "Compra cerrada. Lista nueva lista para empezar.",
+    "title": "Compras cerradas",
+    "show": "Ver historial de compras",
+    "empty": "Todavía no has cerrado ninguna compra",
+    "closed_on": "Cerrada el {{date}}",
+    "bought_of": "{{completed}} de {{total}} comprados",
+    "reopen": "Reabrir",
+    "reopen_confirm": "¿Reabrir \"{{name}}\"? Vuelve a la portada como lista activa.",
+    "reopened_ok": "Lista reabierta",
+    "delete_confirm": "¿Eliminar la compra cerrada \"{{name}}\" del {{date}}? Se pierde para siempre.",
+    "already_closed": "Esta lista ya está cerrada",
+    "reopen_blocked": "No se puede reabrir: ya hay una lista abierta con ese nombre y tiene productos. Renómbrala o vacíala primero."
   },
   "lists": {
     "title": "Tus listas",

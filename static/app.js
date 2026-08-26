@@ -1540,6 +1540,31 @@ function shoppingList() {
             }
         },
 
+        // Finish the shopping trip: the current list is archived into the
+        // history and a fresh one with the same name takes its place. The
+        // server answers with the replacement id so we land on it directly.
+        async closeShoppingList(listId, listName) {
+            if (!this.isOnline) {
+                window.Toast?.show(t('offline.action_blocked'), 'warning');
+                return;
+            }
+
+            if (!confirm(t('archive.close_confirm', { name: listName }))) return;
+
+            try {
+                const response = await fetch(`/lists/${listId}/close`, { method: 'POST' });
+                if (!response.ok) {
+                    window.Toast?.show(await response.text(), 'warning');
+                    return;
+                }
+                const data = await response.json();
+                window.location.href = `/lists/${data.replacement_id}`;
+            } catch (error) {
+                console.error('Failed to close list:', error);
+                window.Toast?.show(t('error.update_failed'), 'warning');
+            }
+        },
+
         // Toggle item completed status via fetch (no HTMX - avoids section re-render)
         _toggleInFlight: {},
         async toggleItem(itemId, sectionId) {

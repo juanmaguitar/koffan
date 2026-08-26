@@ -29,7 +29,8 @@
     "bought": "Bought",
     "name_exists": "A list with this name already exists",
     "show_completed": "Show bought items",
-    "hide_completed": "Hide bought items"
+    "hide_completed": "Hide bought items",
+    "already_closed": "This list is already closed"
   },
   "items": {
     "what_to_buy": "What to buy?",
@@ -184,6 +185,22 @@
     "confirm_delete": "Delete \"{{name}}\" from history?",
     "confirm_delete_batch": "Delete {{count}} selected products from history?",
     "deleted": "Deleted {{count}} products"
+  },
+  "archive": {
+    "close_list": "Close trip",
+    "close_confirm": "Close the \"{{name}}\" shopping trip? It goes to the history and a fresh list opens.",
+    "closed_ok": "Trip closed. New list ready.",
+    "title": "Closed trips",
+    "show": "See shopping history",
+    "empty": "You haven't closed any trip yet",
+    "closed_on": "Closed on {{date}}",
+    "bought_of": "{{completed}} of {{total}} bought",
+    "reopen": "Reopen",
+    "reopen_confirm": "Reopen \"{{name}}\"? It goes back to the home page as the active list.",
+    "reopened_ok": "List reopened",
+    "delete_confirm": "Delete the closed trip \"{{name}}\" from {{date}}? It's gone for good.",
+    "already_closed": "This list is already closed",
+    "reopen_blocked": "Can't reopen: an open list with that name already has items. Rename or empty it first."
   },
   "lists": {
     "title": "Your lists",

@@ -50,7 +50,21 @@ type List struct {
 	ShowCompleted bool      `json:"show_completed"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     int64     `json:"updated_at"`
-	Stats         Stats     `json:"stats,omitempty"`
+	// ClosedAt is nil while the list is open, and holds the unix time the
+	// shopping trip was finished once it is closed.
+	ClosedAt *int64 `json:"closed_at,omitempty"`
+	Stats    Stats  `json:"stats,omitempty"`
+}
+
+// IsClosed reports whether the list is a finished shopping trip.
+func (l List) IsClosed() bool { return l.ClosedAt != nil }
+
+// ClosedOn renders the closing date for the history list.
+func (l List) ClosedOn() string {
+	if l.ClosedAt == nil {
+		return ""
+	}
+	return time.Unix(*l.ClosedAt, 0).Format("02/01/2006")
 }
 
 // Template represents a reusable template
@@ -81,6 +95,7 @@ type TemplateItem struct {
 const listSelectWithStats = `
 	SELECT l.id, l.name, COALESCE(l.icon, '🛒'), l.sort_order, l.is_active,
 	       COALESCE(l.show_completed, TRUE), l.created_at, COALESCE(l.updated_at, 0),
+	       l.closed_at,
 	       COALESCE(COUNT(i.id), 0) AS total_items,
 	       COALESCE(SUM(CASE WHEN i.completed = TRUE THEN 1 ELSE 0 END), 0) AS completed_items
 	FROM lists l
@@ -94,7 +109,7 @@ func scanListWithStats(scanner interface {
 }) (List, error) {
 	var l List
 	var total, completed int
-	if err := scanner.Scan(&l.ID, &l.Name, &l.Icon, &l.SortOrder, &l.IsActive, &l.ShowCompleted, &l.CreatedAt, &l.UpdatedAt, &total, &completed); err != nil {
+	if err := scanner.Scan(&l.ID, &l.Name, &l.Icon, &l.SortOrder, &l.IsActive, &l.ShowCompleted, &l.CreatedAt, &l.UpdatedAt, &l.ClosedAt, &total, &completed); err != nil {
 		return l, err
 	}
 	l.Stats.TotalItems = total
@@ -105,12 +120,36 @@ func scanListWithStats(scanner interface {
 	return l, nil
 }
 
-// GetAllLists returns all shopping lists with their stats (single query with GROUP BY).
+// GetAllLists returns the open shopping lists with their stats (single query
+// with GROUP BY). Closed lists live in the history, see GetClosedLists.
 func GetAllLists() ([]List, error) {
-	rows, err := DB.Query(listSelectWithStats + `
+	return queryLists(listSelectWithStats + `
+		WHERE l.closed_at IS NULL
 		GROUP BY l.id
 		ORDER BY l.sort_order ASC
 	`)
+}
+
+// GetEveryList returns open and closed lists alike. Backups must use this:
+// exporting only the open ones would quietly drop the whole shopping history.
+func GetEveryList() ([]List, error) {
+	return queryLists(listSelectWithStats + `
+		GROUP BY l.id
+		ORDER BY l.sort_order ASC
+	`)
+}
+
+// GetClosedLists returns finished shopping trips, most recent first.
+func GetClosedLists() ([]List, error) {
+	return queryLists(listSelectWithStats + `
+		WHERE l.closed_at IS NOT NULL
+		GROUP BY l.id
+		ORDER BY l.closed_at DESC
+	`)
+}
+
+func queryLists(query string) ([]List, error) {
+	rows, err := DB.Query(query)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +163,7 @@ func GetAllLists() ([]List, error) {
 		}
 		lists = append(lists, l)
 	}
-	return lists, nil
+	return lists, rows.Err()
 }
 
 // GetListByID returns a single list by ID with stats.
@@ -174,26 +213,79 @@ func CreateList(name, icon string) (*List, error) {
 	return GetListByID(id)
 }
 
-// ListNameExists checks if a list with the given name already exists (case-insensitive)
-// excludeID allows excluding a specific list (useful when updating)
+// ListNameExists checks if an OPEN list with the given name already exists
+// (case-insensitive). excludeID allows excluding a specific list (useful when
+// updating).
+//
+// Closed lists are ignored on purpose: every finished shopping trip keeps the
+// name it had, so "Supermercado" is expected to appear once per week in the
+// history. Counting them here would make closing a list twice impossible.
 func ListNameExists(name string, excludeID int64) (bool, error) {
 	var count int
 	var err error
 	if excludeID > 0 {
 		err = DB.QueryRow(`
 			SELECT COUNT(*) FROM lists
-			WHERE name = ? COLLATE NOCASE AND id != ?
+			WHERE name = ? COLLATE NOCASE AND id != ? AND closed_at IS NULL
 		`, name, excludeID).Scan(&count)
 	} else {
 		err = DB.QueryRow(`
 			SELECT COUNT(*) FROM lists
-			WHERE name = ? COLLATE NOCASE
+			WHERE name = ? COLLATE NOCASE AND closed_at IS NULL
 		`, name).Scan(&count)
 	}
 	if err != nil {
 		return false, err
 	}
 	return count > 0, nil
+}
+
+// GetOpenListByName returns the open list holding a name, if any.
+func GetOpenListByName(name string, excludeID int64) (*List, error) {
+	row := DB.QueryRow(listSelectWithStats+`
+		WHERE l.name = ? COLLATE NOCASE AND l.closed_at IS NULL AND l.id != ?
+		GROUP BY l.id
+		LIMIT 1
+	`, name, excludeID)
+	l, err := scanListWithStats(row)
+	if err != nil {
+		return nil, err
+	}
+	return &l, nil
+}
+
+// CloseList marks a shopping trip as finished.
+func CloseList(id int64) error {
+	_, err := DB.Exec(`
+		UPDATE lists
+		SET closed_at = strftime('%s', 'now'), is_active = FALSE, updated_at = strftime('%s', 'now')
+		WHERE id = ? AND closed_at IS NULL
+	`, id)
+	return err
+}
+
+// ReopenList brings a closed list back to the home page.
+func ReopenList(id int64) error {
+	_, err := DB.Exec(`
+		UPDATE lists SET closed_at = NULL, updated_at = strftime('%s', 'now') WHERE id = ?
+	`, id)
+	return err
+}
+
+// CreateListAt creates a list at a specific position, used when closing a trip
+// so the replacement keeps the slot the old one had on the home page.
+func CreateListAt(name, icon string, sortOrder int) (*List, error) {
+	if icon == "" {
+		icon = "🛒"
+	}
+	result, err := DB.Exec(`
+		INSERT INTO lists (name, icon, sort_order, is_active) VALUES (?, ?, ?, FALSE)
+	`, name, icon, sortOrder)
+	if err != nil {
+		return nil, err
+	}
+	id, _ := result.LastInsertId()
+	return GetListByID(id)
 }
 
 // UpdateList updates a list's name and icon

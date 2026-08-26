@@ -190,6 +190,39 @@ func runMigrations() {
 
 	// Migration: Add show_completed to lists
 	migrateListShowCompleted()
+
+	// Migration: Add closed_at to lists
+	migrateListClosing()
+}
+
+// migrateListClosing adds the closed_at column that turns a list into a
+// finished shopping trip. NULL means the list is still open.
+func migrateListClosing() {
+	var count int
+	err := DB.QueryRow("SELECT COUNT(*) FROM pragma_table_info('lists') WHERE name='closed_at'").Scan(&count)
+	if err != nil {
+		log.Println("Migration check failed:", err)
+		return
+	}
+
+	if count > 0 {
+		return // Already migrated
+	}
+
+	log.Println("Running migration: Adding closed_at to lists...")
+
+	_, err = DB.Exec("ALTER TABLE lists ADD COLUMN closed_at INTEGER")
+	if err != nil {
+		log.Println("Migration failed - adding closed_at to lists:", err)
+		return
+	}
+
+	_, err = DB.Exec("CREATE INDEX IF NOT EXISTS idx_lists_closed ON lists(closed_at)")
+	if err != nil {
+		log.Println("Migration warning - creating lists closed index:", err)
+	}
+
+	log.Println("Migration completed: List closing added")
 }
 
 func migrateToMultipleLists() {

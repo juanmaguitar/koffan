@@ -77,7 +77,9 @@ func ExportAllData(c *fiber.Ctx) error {
 	includeTemplates := c.Query("include_templates", "true") == "true"
 	includeHistory := c.Query("include_history", "true") == "true"
 
-	lists, err := db.GetAllLists()
+	// Closed trips are part of the backup: exporting only the open lists
+	// would silently drop the shopping history.
+	lists, err := db.GetEveryList()
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch lists"})
 	}
@@ -395,7 +397,9 @@ func sanitizeFilename(name string) string {
 
 // GetExportPreview returns a preview of what will be exported (for UI)
 func GetExportPreview(c *fiber.Ctx) error {
-	lists, err := db.GetAllLists()
+	// Closed trips are part of the backup: exporting only the open lists
+	// would silently drop the shopping history.
+	lists, err := db.GetEveryList()
 	if err != nil {
 		return c.Status(500).JSON(fiber.Map{"error": "Failed to fetch lists"})
 	}
