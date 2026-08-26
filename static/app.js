@@ -256,6 +256,10 @@ function shoppingList() {
         // Current item for mobile actions
         mobileActionItem: null,
 
+        // Closing the shopping trip
+        showCloseTrip: false,
+        carryOver: true,
+
         // Edit item
         editingItem: null,
         editItemName: '',
@@ -1543,21 +1547,36 @@ function shoppingList() {
         // Finish the shopping trip: the current list is archived into the
         // history and a fresh one with the same name takes its place. The
         // server answers with the replacement id so we land on it directly.
-        async closeShoppingList(listId, listName) {
+        // How many products are still to buy. Drives whether the carry-over
+        // option is worth showing at all.
+        get pendingCount() {
+            return Math.max(0, (this.stats.total || 0) - (this.stats.completed || 0));
+        },
+
+        openCloseTrip() {
             if (!this.isOnline) {
                 window.Toast?.show(t('offline.action_blocked'), 'warning');
                 return;
             }
+            this.carryOver = this.pendingCount > 0;
+            this.showCloseTrip = true;
+        },
 
-            if (!confirm(t('archive.close_confirm', { name: listName }))) return;
+        async closeShoppingList(listId) {
+            const body = new URLSearchParams({ carry_over: this.carryOver ? 'true' : 'false' });
 
             try {
-                const response = await fetch(`/lists/${listId}/close`, { method: 'POST' });
+                const response = await fetch(`/lists/${listId}/close`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: body.toString()
+                });
                 if (!response.ok) {
                     window.Toast?.show(await response.text(), 'warning');
                     return;
                 }
                 const data = await response.json();
+                this.showCloseTrip = false;
                 window.location.href = `/lists/${data.replacement_id}`;
             } catch (error) {
                 console.error('Failed to close list:', error);

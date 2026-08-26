@@ -9,6 +9,7 @@ import (
 	"shopping-list/webhook"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -288,6 +289,19 @@ func CloseList(c *fiber.Ctx) error {
 	if _, err := ensureDefaultSection(replacement.ID); err != nil {
 		log.Printf("Error creating default section for list %d: %v", replacement.ID, err)
 	}
+
+	// Whatever was left unbought starts the next trip. The closed list keeps
+	// its copy, so the history still shows what was missed.
+	carried := 0
+	if c.FormValue("carry_over") == "true" {
+		carried, err = db.CopyItemsBetweenLists(id, replacement.ID, true)
+		if err != nil {
+			// The trip is already closed and the replacement exists; losing the
+			// carry-over is annoying but not worth undoing the whole close.
+			log.Printf("Error carrying items from list %d to %d: %v", id, replacement.ID, err)
+		}
+	}
+
 	db.SetActiveList(replacement.ID)
 
 	BroadcastUpdate("list_closed", map[string]int64{"id": id, "replacement_id": replacement.ID})
@@ -295,7 +309,86 @@ func CloseList(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"closed_id":      id,
 		"replacement_id": replacement.ID,
+		"carried":        carried,
 	})
+}
+
+// freeListName returns the given name, or the first numbered variant that no
+// open list is using. Falls back to a timestamp suffix so it always terminates.
+func freeListName(name string) (string, error) {
+	exists, err := db.ListNameExists(name, 0)
+	if err != nil {
+		return "", err
+	}
+	if !exists {
+		return name, nil
+	}
+
+	for i := 2; i <= 50; i++ {
+		candidate := fmt.Sprintf("%s (%d)", name, i)
+		if len(candidate) > MaxListNameLength {
+			break
+		}
+		exists, err := db.ListNameExists(candidate, 0)
+		if err != nil {
+			return "", err
+		}
+		if !exists {
+			return candidate, nil
+		}
+	}
+
+	return fmt.Sprintf("%s (%d)", name, time.Now().Unix()), nil
+}
+
+// DuplicateList opens a new list with the same products as an existing one,
+// all unchecked. Used from the history to repeat a past shopping trip.
+func DuplicateList(c *fiber.Ctx) error {
+	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
+	if err != nil {
+		return sendError(c, 400, "error.invalid_id")
+	}
+
+	source, err := db.GetListByID(id)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return sendError(c, 404, "error.not_found")
+		}
+		return sendError(c, 500, "error.fetch_failed")
+	}
+
+	name := strings.TrimSpace(c.FormValue("name"))
+	if name == "" {
+		name = source.Name
+	}
+	if len(name) > MaxListNameLength {
+		return sendError(c, 400, "error.name_too_long")
+	}
+
+	// Duplicating "Supermercado" while an open list already holds that name is
+	// the normal case, not an error: find a free variant instead of refusing.
+	name, err = freeListName(name)
+	if err != nil {
+		return sendError(c, 500, "error.check_failed")
+	}
+
+	created, err := db.CreateList(name, source.Icon)
+	if err != nil {
+		return sendError(c, 500, "error.create_failed")
+	}
+	if _, err := ensureDefaultSection(created.ID); err != nil {
+		log.Printf("Error creating default section for list %d: %v", created.ID, err)
+	}
+
+	copied, err := db.CopyItemsBetweenLists(id, created.ID, false)
+	if err != nil {
+		return sendError(c, 500, "error.create_failed")
+	}
+
+	db.SetActiveList(created.ID)
+	BroadcastUpdate("list_created", created)
+
+	return c.JSON(fiber.Map{"id": created.ID, "copied": copied})
 }
 
 // ReopenList brings a closed list back to the home page.

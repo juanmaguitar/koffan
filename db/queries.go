@@ -240,6 +240,105 @@ func ListNameExists(name string, excludeID int64) (bool, error) {
 	return count > 0, nil
 }
 
+// CopyItemsBetweenLists copies products from one list into another and returns
+// how many were copied. With onlyUncompleted it takes just the ones still to
+// buy, which is what carrying a trip over to the next week means; otherwise it
+// takes everything, which is what duplicating a past trip means.
+//
+// The source is never modified: a closed trip stays as a faithful record of
+// what was and wasn't bought. Copies always land unchecked and without the
+// bought flag, since they are a fresh shopping list.
+func CopyItemsBetweenLists(fromListID, toListID int64, onlyUncompleted bool) (int, error) {
+	tx, err := DB.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	// Sections are hidden in this fork, so everything lands in the target's
+	// single section. Create it if the list somehow has none.
+	var sectionID int64
+	err = tx.QueryRow(`
+		SELECT id FROM sections WHERE list_id = ? ORDER BY sort_order ASC LIMIT 1
+	`, toListID).Scan(&sectionID)
+	if err == sql.ErrNoRows {
+		result, insErr := tx.Exec(`
+			INSERT INTO sections (name, sort_order, list_id) VALUES ('General', 0, ?)
+		`, toListID)
+		if insErr != nil {
+			return 0, insErr
+		}
+		sectionID, _ = result.LastInsertId()
+	} else if err != nil {
+		return 0, err
+	}
+
+	query := `
+		SELECT i.name, i.description, i.quantity
+		FROM items i
+		JOIN sections s ON s.id = i.section_id
+		WHERE s.list_id = ?
+	`
+	if onlyUncompleted {
+		query += " AND i.completed = FALSE"
+	}
+	query += " ORDER BY s.sort_order ASC, i.sort_order ASC"
+
+	rows, err := tx.Query(query, fromListID)
+	if err != nil {
+		return 0, err
+	}
+
+	type pending struct {
+		name        string
+		description string
+		quantity    int
+	}
+	var toCopy []pending
+	for rows.Next() {
+		var p pending
+		if err := rows.Scan(&p.name, &p.description, &p.quantity); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		toCopy = append(toCopy, p)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+
+	var maxOrder int
+	tx.QueryRow("SELECT COALESCE(MAX(sort_order), -1) FROM items WHERE section_id = ?", sectionID).Scan(&maxOrder)
+
+	copied := 0
+	for _, p := range toCopy {
+		// Skip anything already on the target list, so carrying over twice
+		// does not pile up duplicates.
+		var exists int
+		tx.QueryRow(`
+			SELECT COUNT(*) FROM items WHERE section_id = ? AND name = ? COLLATE NOCASE
+		`, sectionID, p.name).Scan(&exists)
+		if exists > 0 {
+			continue
+		}
+
+		maxOrder++
+		if _, err := tx.Exec(`
+			INSERT INTO items (section_id, name, description, quantity, completed, sort_order)
+			VALUES (?, ?, ?, ?, FALSE, ?)
+		`, sectionID, p.name, p.description, p.quantity, maxOrder); err != nil {
+			return 0, err
+		}
+		copied++
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return copied, nil
+}
+
 // GetOpenListByName returns the open list holding a name, if any.
 func GetOpenListByName(name string, excludeID int64) (*List, error) {
 	row := DB.QueryRow(listSelectWithStats+`

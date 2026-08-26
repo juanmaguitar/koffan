@@ -229,6 +229,7 @@ func main() {
 	app.Get("/lists/:id/activate", handlers.SetActiveList)
 	app.Post("/lists/:id/close", handlers.CloseList)
 	app.Post("/lists/:id/reopen", handlers.ReopenList)
+	app.Post("/lists/:id/duplicate", handlers.DuplicateList)
 	app.Post("/lists/:id/move-up", handlers.MoveListUp)
 	app.Post("/lists/:id/move-down", handlers.MoveListDown)
 	app.Post("/lists/:id/toggle-completed", handlers.ToggleShowCompleted)

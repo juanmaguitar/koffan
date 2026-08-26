@@ -68,7 +68,7 @@
 
                     <!-- Close the shopping trip: archives it and opens a fresh list -->
                     <button
-                        @click="closeShoppingList({{.List.ID}}, '{{.List.Name | js}}')"
+                        @click="openCloseTrip()"
                         class="p-1.5 text-stone-400 hover:text-emerald-500 dark:text-stone-500 dark:hover:text-emerald-400 rounded-lg transition-colors"
                         :title="t('archive.close_list')"
                     >
@@ -123,7 +123,7 @@
 
                     <!-- Close the shopping trip: archives it and opens a fresh list -->
                     <button
-                        @click="closeShoppingList({{.List.ID}}, '{{.List.Name | js}}')"
+                        @click="openCloseTrip()"
                         class="p-1.5 text-stone-400 hover:text-emerald-500 dark:text-stone-500 dark:hover:text-emerald-400 rounded-lg transition-colors"
                         :title="t('archive.close_list')"
                     >
@@ -360,6 +360,40 @@
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
                     </svg>
                     <span x-text="t('common.delete')"></span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Close trip: archives this shopping list and opens the next one -->
+    <div x-show="showCloseTrip" x-cloak class="fixed inset-0 z-50 flex items-end md:items-center justify-center">
+        <div class="absolute inset-0 bg-black/40 dark:bg-black/60 backdrop-blur-sm" @click="showCloseTrip = false"></div>
+        <div class="relative bg-white dark:bg-stone-800 rounded-t-2xl md:rounded-2xl w-full md:max-w-md p-6"
+             x-transition:enter="transition ease-out duration-200"
+             x-transition:enter-start="translate-y-full md:translate-y-0 md:scale-95 opacity-0"
+             x-transition:enter-end="translate-y-0 md:scale-100 opacity-100">
+            <h3 class="text-lg font-semibold text-stone-800 dark:text-stone-100 mb-2" x-text="t('archive.close_title')"></h3>
+            <p class="text-sm text-stone-600 dark:text-stone-300 mb-4" x-text="t('archive.close_body', {name: '{{.List.Name | js}}'})"></p>
+
+            <!-- Only worth asking when something is actually left to buy -->
+            <label x-show="pendingCount > 0" class="flex items-center justify-between gap-3 py-3 px-3 mb-2 rounded-xl bg-stone-50 dark:bg-stone-700/50 cursor-pointer select-none">
+                <span class="text-sm text-stone-700 dark:text-stone-200" x-text="t('archive.carry_over', {count: pendingCount})"></span>
+                <div class="relative flex-shrink-0">
+                    <input type="checkbox" x-model="carryOver" class="sr-only peer">
+                    <div class="w-10 h-6 bg-stone-200 dark:bg-stone-600 rounded-full peer peer-checked:bg-pink-400 transition-colors"></div>
+                    <div class="absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full shadow-sm transition-transform peer-checked:translate-x-4"></div>
+                </div>
+            </label>
+
+            <div class="flex gap-3 pt-2">
+                <button type="button" @click="showCloseTrip = false"
+                    class="flex-1 border border-stone-200 dark:border-stone-600 text-stone-600 dark:text-stone-300 py-3 rounded-lg text-sm font-medium hover:bg-stone-50 dark:hover:bg-stone-700 transition-colors"
+                    x-text="t('common.cancel')">
+                </button>
+                <button type="button" @click="closeShoppingList({{.List.ID}})"
+                    class="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white py-3 rounded-lg text-sm font-medium transition-colors"
+                    x-text="t('archive.close_title')">
                 </button>
             </div>
         </div>

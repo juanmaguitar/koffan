@@ -200,7 +200,15 @@
     "reopened_ok": "Lista reabierta",
     "delete_confirm": "¿Eliminar la compra cerrada \"{{name}}\" del {{date}}? Se pierde para siempre.",
     "already_closed": "Esta lista ya está cerrada",
-    "reopen_blocked": "No se puede reabrir: ya hay una lista abierta con ese nombre y tiene productos. Renómbrala o vacíala primero."
+    "reopen_blocked": "No se puede reabrir: ya hay una lista abierta con ese nombre y tiene productos. Renómbrala o vacíala primero.",
+    "close_title": "Cerrar compra",
+    "close_body": "\"{{name}}\" se guarda en el historial y se abre una lista nueva vacía.",
+    "carry_over": "Llevar los {{count}} sin comprar a la lista nueva",
+    "carry_question": "Quedan {{count}} productos sin comprar. ¿Llevarlos a la lista nueva?",
+    "carried_ok": "{{count}} productos pasan a la lista nueva",
+    "duplicate": "Duplicar",
+    "duplicate_confirm": "¿Crear una lista nueva con los productos de \"{{name}}\"? Aparecerán todos sin tachar.",
+    "duplicated_ok": "Lista creada con {{count}} productos"
   },
   "lists": {
     "title": "Tus listas",

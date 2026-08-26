@@ -200,7 +200,15 @@
     "reopened_ok": "List reopened",
     "delete_confirm": "Delete the closed trip \"{{name}}\" from {{date}}? It's gone for good.",
     "already_closed": "This list is already closed",
-    "reopen_blocked": "Can't reopen: an open list with that name already has items. Rename or empty it first."
+    "reopen_blocked": "Can't reopen: an open list with that name already has items. Rename or empty it first.",
+    "close_title": "Close trip",
+    "close_body": "\"{{name}}\" goes to the history and a fresh empty list opens.",
+    "carry_over": "Take the {{count}} unbought items to the new list",
+    "carry_question": "{{count}} items are still unbought. Take them to the new list?",
+    "carried_ok": "{{count}} items moved to the new list",
+    "duplicate": "Duplicate",
+    "duplicate_confirm": "Create a new list with the items from \"{{name}}\"? They all start unchecked.",
+    "duplicated_ok": "List created with {{count}} items"
   },
   "lists": {
     "title": "Your lists",
