@@ -30,7 +30,14 @@
     "name_exists": "Ya existe una lista con este nombre",
     "show_completed": "Mostrar artículos comprados",
     "hide_completed": "Ocultar artículos comprados",
-    "already_closed": "Esta lista ya está cerrada"
+    "already_closed": "Esta lista ya está cerrada",
+    "move_to_list_title": "Mover a otra lista",
+    "move_to_list_empty": "No hay otra lista abierta",
+    "moved_to": "{{count}} movido a {{list}}",
+    "moved_to_plural": "{{count}} movidos a {{list}}",
+    "moved_merged": "{{count}} fundido con lo que ya había en {{list}}",
+    "moved_merged_plural": "{{count}} fundidos con lo que ya había en {{list}}",
+    "moved_pending": "Se moverá a {{list}} al recuperar la conexión"
   },
   "items": {
     "what_to_buy": "¿Qué comprar?",
@@ -73,7 +80,8 @@
     "uncertain": "Incierto",
     "certain": "Seguro",
     "remove_mark": "Quitar marca",
-    "mark_uncertain": "Marcar como incierto"
+    "mark_uncertain": "Marcar como incierto",
+    "move_to_list": "Mover a otra lista"
   },
   "settings": {
     "title": "Ajustes",
@@ -157,7 +165,10 @@
     "apply_failed": "Error al aplicar",
     "session_failed": "Error al crear sesión",
     "database_unavailable": "Base de datos temporalmente no disponible, intente de nuevo",
-    "database_error": "Error de base de datos"
+    "database_error": "Error de base de datos",
+    "list_not_found": "Lista no encontrada",
+    "list_closed": "La lista está cerrada",
+    "too_many_items": "Demasiados productos a la vez"
   },
   "offline": {
     "title": "Modo sin conexión",

@@ -30,7 +30,14 @@
     "name_exists": "A list with this name already exists",
     "show_completed": "Show bought items",
     "hide_completed": "Hide bought items",
-    "already_closed": "This list is already closed"
+    "already_closed": "This list is already closed",
+    "move_to_list_title": "Move to another list",
+    "move_to_list_empty": "No other open list",
+    "moved_to": "{{count}} moved to {{list}}",
+    "moved_to_plural": "{{count}} moved to {{list}}",
+    "moved_merged": "{{count}} merged into what {{list}} already had",
+    "moved_merged_plural": "{{count}} merged into what {{list}} already had",
+    "moved_pending": "Will move to {{list}} once back online"
   },
   "items": {
     "what_to_buy": "What to buy?",
@@ -73,7 +80,8 @@
     "uncertain": "Uncertain",
     "certain": "Certain",
     "remove_mark": "Remove mark",
-    "mark_uncertain": "Mark as uncertain"
+    "mark_uncertain": "Mark as uncertain",
+    "move_to_list": "Move to another list"
   },
   "settings": {
     "title": "Settings",
@@ -157,7 +165,10 @@
     "apply_failed": "Failed to apply",
     "session_failed": "Session creation failed",
     "database_unavailable": "Database temporarily unavailable, please retry",
-    "database_error": "Database error"
+    "database_error": "Database error",
+    "list_not_found": "List not found",
+    "list_closed": "The list is closed",
+    "too_many_items": "Too many products at once"
   },
   "offline": {
     "title": "Offline mode",

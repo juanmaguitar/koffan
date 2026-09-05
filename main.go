@@ -250,6 +250,7 @@ func main() {
 	app.Get("/items/:id/html", handlers.GetItemHTML)
 	app.Post("/items", handlers.CreateItem)
 	app.Post("/items/delete-completed", handlers.DeleteCompletedItems)
+	app.Post("/items/move-list", handlers.MoveItemsToList)
 	app.Put("/items/:id", handlers.UpdateItem)
 	app.Delete("/items/:id", handlers.DeleteItem)
 	app.Post("/items/:id/toggle", handlers.ToggleItem)

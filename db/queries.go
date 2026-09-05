@@ -339,6 +339,139 @@ func CopyItemsBetweenLists(fromListID, toListID int64, onlyUncompleted bool) (in
 	return copied, nil
 }
 
+// MoveResult reports what happened to a batch of products sent to another list.
+type MoveResult struct {
+	Moved          int     `json:"moved"`
+	Merged         int     `json:"merged"`
+	Skipped        int     `json:"skipped"`
+	FromSectionIDs []int64 `json:"-"`
+	ToSectionID    int64   `json:"-"`
+	MovedIDs       []int64 `json:"-"`
+}
+
+// MoveItemsToList moves products out of their current list and into another
+// one. Unlike CopyItemsBetweenLists the source loses them: this is the "I
+// wrote it on the wrong list" case, not the weekly carry-over.
+//
+// When the target already holds a product with the same name the two are
+// merged into the target's row: quantities add up, the note survives, and the
+// row comes back unchecked, because moving something onto a list means it is
+// still to buy. Products the target does not have keep their bought flag, so
+// moving a finished trip's leftovers does not silently untick them.
+//
+// Missing ids and products already on the target are counted as skipped rather
+// than failing the batch, so the offline queue can replay a move whose items
+// have since been merged away.
+func MoveItemsToList(itemIDs []int64, toListID int64) (MoveResult, error) {
+	result := MoveResult{}
+	if len(itemIDs) == 0 {
+		return result, nil
+	}
+
+	tx, err := DB.Begin()
+	if err != nil {
+		return result, err
+	}
+	defer tx.Rollback()
+
+	// Sections are hidden in this fork, so everything lands in the target's
+	// single section. Create it if the list somehow has none.
+	var sectionID int64
+	err = tx.QueryRow(`
+		SELECT id FROM sections WHERE list_id = ? ORDER BY sort_order ASC LIMIT 1
+	`, toListID).Scan(&sectionID)
+	if err == sql.ErrNoRows {
+		res, insErr := tx.Exec(`
+			INSERT INTO sections (name, sort_order, list_id) VALUES ('General', 0, ?)
+		`, toListID)
+		if insErr != nil {
+			return result, insErr
+		}
+		sectionID, _ = res.LastInsertId()
+	} else if err != nil {
+		return result, err
+	}
+	result.ToSectionID = sectionID
+
+	var maxOrder int
+	tx.QueryRow("SELECT COALESCE(MAX(sort_order), -1) FROM items WHERE section_id = ?", sectionID).Scan(&maxOrder)
+
+	seenSections := make(map[int64]bool)
+
+	for _, id := range itemIDs {
+		var src Item
+		err := tx.QueryRow(`
+			SELECT id, section_id, name, description, completed, uncertain, COALESCE(quantity, 0)
+			FROM items WHERE id = ?
+		`, id).Scan(&src.ID, &src.SectionID, &src.Name, &src.Description, &src.Completed, &src.Uncertain, &src.Quantity)
+		if err == sql.ErrNoRows {
+			result.Skipped++
+			continue
+		} else if err != nil {
+			return result, err
+		}
+
+		if src.SectionID == sectionID {
+			result.Skipped++
+			continue
+		}
+
+		var dst Item
+		err = tx.QueryRow(`
+			SELECT id, description, completed, uncertain, COALESCE(quantity, 0)
+			FROM items WHERE section_id = ? AND name = ? COLLATE NOCASE LIMIT 1
+		`, sectionID, src.Name).Scan(&dst.ID, &dst.Description, &dst.Completed, &dst.Uncertain, &dst.Quantity)
+
+		switch {
+		case err == nil:
+			// Merge into the row the target already has.
+			quantity := dst.Quantity + src.Quantity
+			description := dst.Description
+			if description == "" {
+				description = src.Description
+			}
+			if _, err := tx.Exec(`
+				UPDATE items
+				SET quantity = ?, description = ?, uncertain = ?, completed = FALSE,
+				    updated_at = strftime('%s', 'now')
+				WHERE id = ?
+			`, quantity, description, dst.Uncertain || src.Uncertain, dst.ID); err != nil {
+				return result, err
+			}
+			if _, err := tx.Exec("DELETE FROM items WHERE id = ?", src.ID); err != nil {
+				return result, err
+			}
+			result.Merged++
+			// Report the surviving row, so webhooks describe a product that
+			// still exists.
+			result.MovedIDs = append(result.MovedIDs, dst.ID)
+		case err == sql.ErrNoRows:
+			maxOrder++
+			if _, err := tx.Exec(`
+				UPDATE items
+				SET section_id = ?, sort_order = ?, updated_at = strftime('%s', 'now')
+				WHERE id = ?
+			`, sectionID, maxOrder, src.ID); err != nil {
+				return result, err
+			}
+			result.Moved++
+			result.MovedIDs = append(result.MovedIDs, src.ID)
+		default:
+			return result, err
+		}
+
+		if !seenSections[src.SectionID] {
+			seenSections[src.SectionID] = true
+			result.FromSectionIDs = append(result.FromSectionIDs, src.SectionID)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return MoveResult{}, err
+	}
+	return result, nil
+}
+
 // GetOpenListByName returns the open list holding a name, if any.
 func GetOpenListByName(name string, excludeID int64) (*List, error) {
 	row := DB.QueryRow(listSelectWithStats+`

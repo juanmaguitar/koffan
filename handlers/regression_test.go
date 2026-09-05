@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"shopping-list/db"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -317,5 +318,168 @@ func TestConcurrentWebSocketBroadcastsUseSingleWriter(t *testing.T) {
 
 	if detector.concurrent.Load() {
 		t.Fatal("websocket writes overlapped")
+	}
+}
+
+func TestMoveItemsToListMovesAndMerges(t *testing.T) {
+	initTestDatabase(t)
+
+	source, err := db.CreateList("Supermercado", "cart")
+	if err != nil {
+		t.Fatalf("create source list: %v", err)
+	}
+	target, err := db.CreateList("Ferretería", "hammer")
+	if err != nil {
+		t.Fatalf("create target list: %v", err)
+	}
+	sourceSection, err := db.CreateSectionForList(source.ID, "General")
+	if err != nil {
+		t.Fatalf("create source section: %v", err)
+	}
+	targetSection, err := db.CreateSectionForList(target.ID, "General")
+	if err != nil {
+		t.Fatalf("create target section: %v", err)
+	}
+
+	// Plain move: nothing with that name on the target.
+	screws, err := db.CreateItem(sourceSection.ID, "Tornillos", "de 4mm", 2)
+	if err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+	// Merge: the target already has it, bought and with its own quantity.
+	tapeSource, err := db.CreateItem(sourceSection.ID, "Cinta", "", 3)
+	if err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+	tapeTarget, err := db.CreateItem(targetSection.ID, "cinta", "", 2)
+	if err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+	if _, err := db.DB.Exec("UPDATE items SET completed = TRUE WHERE id = ?", tapeTarget.ID); err != nil {
+		t.Fatalf("mark target item bought: %v", err)
+	}
+
+	result, err := db.MoveItemsToList([]int64{screws.ID, tapeSource.ID}, target.ID)
+	if err != nil {
+		t.Fatalf("move items: %v", err)
+	}
+	if result.Moved != 1 || result.Merged != 1 || result.Skipped != 0 {
+		t.Fatalf("result = %#v, want 1 moved, 1 merged, 0 skipped", result)
+	}
+	if result.ToSectionID != targetSection.ID {
+		t.Fatalf("target section = %d, want %d", result.ToSectionID, targetSection.ID)
+	}
+
+	moved, err := db.GetItemByID(screws.ID)
+	if err != nil {
+		t.Fatalf("read moved item: %v", err)
+	}
+	if moved.SectionID != targetSection.ID || moved.Description != "de 4mm" || moved.Quantity != 2 {
+		t.Fatalf("moved item = %#v, want target section with its note and quantity", moved)
+	}
+
+	if _, err := db.GetItemByID(tapeSource.ID); err == nil {
+		t.Fatalf("merged source item %d still exists", tapeSource.ID)
+	}
+	merged, err := db.GetItemByID(tapeTarget.ID)
+	if err != nil {
+		t.Fatalf("read merged item: %v", err)
+	}
+	if merged.Quantity != 5 {
+		t.Fatalf("merged quantity = %d, want 5", merged.Quantity)
+	}
+	if merged.Completed {
+		t.Fatalf("merged item is still bought, want it back on the to-buy list")
+	}
+
+	remaining, err := db.GetItemsBySection(sourceSection.ID)
+	if err != nil {
+		t.Fatalf("read source section: %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("source section still holds %d items, want 0", len(remaining))
+	}
+}
+
+func TestMoveItemsToListSkipsSameListAndMissingItems(t *testing.T) {
+	initTestDatabase(t)
+
+	list, err := db.CreateList("Supermercado", "cart")
+	if err != nil {
+		t.Fatalf("create list: %v", err)
+	}
+	section, err := db.CreateSectionForList(list.ID, "General")
+	if err != nil {
+		t.Fatalf("create section: %v", err)
+	}
+	item, err := db.CreateItem(section.ID, "Leche", "", 1)
+	if err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+
+	// Moving onto its own list, and replaying a move for an id the merge
+	// already removed, both have to stay harmless: the offline queue does it.
+	result, err := db.MoveItemsToList([]int64{item.ID, item.ID + 999}, list.ID)
+	if err != nil {
+		t.Fatalf("move items: %v", err)
+	}
+	if result.Moved != 0 || result.Merged != 0 || result.Skipped != 2 {
+		t.Fatalf("result = %#v, want everything skipped", result)
+	}
+
+	unchanged, err := db.GetItemByID(item.ID)
+	if err != nil {
+		t.Fatalf("read item: %v", err)
+	}
+	if unchanged.SectionID != section.ID {
+		t.Fatalf("item moved to section %d, want %d", unchanged.SectionID, section.ID)
+	}
+}
+
+func TestMoveItemsToListEndpointRejectsClosedList(t *testing.T) {
+	initTestDatabase(t)
+
+	app := fiber.New()
+	app.Post("/items/move-list", MoveItemsToList)
+
+	source, err := db.CreateList("Supermercado", "cart")
+	if err != nil {
+		t.Fatalf("create source list: %v", err)
+	}
+	closed, err := db.CreateList("Semana pasada", "cart")
+	if err != nil {
+		t.Fatalf("create closed list: %v", err)
+	}
+	if err := db.CloseList(closed.ID); err != nil {
+		t.Fatalf("close list: %v", err)
+	}
+	section, err := db.CreateSectionForList(source.ID, "General")
+	if err != nil {
+		t.Fatalf("create section: %v", err)
+	}
+	item, err := db.CreateItem(section.ID, "Leche", "", 1)
+	if err != nil {
+		t.Fatalf("create item: %v", err)
+	}
+
+	form := url.Values{}
+	form.Set("item_ids", strconv.FormatInt(item.ID, 10))
+	form.Set("list_id", strconv.FormatInt(closed.ID, 10))
+	req := httptest.NewRequest(http.MethodPost, "/items/move-list", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := app.Test(req, 2000)
+	if err != nil {
+		t.Fatalf("request did not complete: %v", err)
+	}
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", resp.StatusCode)
+	}
+
+	unchanged, err := db.GetItemByID(item.ID)
+	if err != nil {
+		t.Fatalf("read item: %v", err)
+	}
+	if unchanged.SectionID != section.ID {
+		t.Fatalf("item left its section, want it untouched")
 	}
 }

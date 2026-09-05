@@ -256,6 +256,10 @@ function shoppingList() {
         // Current item for mobile actions
         mobileActionItem: null,
 
+        // Move to another list (ids waiting for a target)
+        showMoveToList: false,
+        moveTargetIds: [],
+
         // Closing the shopping trip
         showCloseTrip: false,
         carryOver: true,
@@ -1771,6 +1775,116 @@ function shoppingList() {
                 }
             } catch (error) {
                 console.error('Failed to move item:', error);
+            }
+        },
+
+        // ===== MOVE TO ANOTHER LIST =====
+
+        // Opens the target picker for one product (item menu) or for a
+        // selection. Ids are kept here so the modal in list.html stays generic.
+        openMoveToList(itemIds) {
+            const ids = (Array.isArray(itemIds) ? itemIds : [itemIds])
+                .map(id => parseInt(id))
+                .filter(id => !isNaN(id));
+            if (!ids.length) return;
+            this.moveTargetIds = ids;
+            this.mobileActionItem = null;
+            this.showMoveToList = true;
+        },
+
+        closeMoveToList() {
+            this.showMoveToList = false;
+            this.moveTargetIds = [];
+        },
+
+        // Sends the products to another list. The rows leave this page, so
+        // there is no server HTML to reinsert: they are removed from the DOM,
+        // from the counters and from the offline cache.
+        async moveItemsToList(toListId, toListName) {
+            const itemIds = this.moveTargetIds.slice();
+            this.closeMoveToList();
+            if (!itemIds.length) return;
+
+            const sections = new Set();
+            itemIds.forEach(id => {
+                const el = document.getElementById(`item-${id}`);
+                if (el?.dataset?.sectionId) sections.add(el.dataset.sectionId);
+            });
+
+            this.markLocalAction('item_moved');
+
+            let response;
+            try {
+                response = await this.offlineFetch(
+                    '/items/move-list',
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: `item_ids=${itemIds.join(',')}&list_id=${toListId}`
+                    },
+                    'move_to_list'
+                );
+            } catch (error) {
+                console.error('Failed to move items to list:', error);
+                return;
+            }
+
+            if (!response.ok) {
+                console.error('[MoveToList] Server error:', response.status);
+                window.Toast.show(t('error.move_failed'), 'error');
+                return;
+            }
+
+            // Offline: the queue replays the same request later, so the rows
+            // are removed now and the toast says the move is still pending.
+            let result = null;
+            if (!response.offline) {
+                try {
+                    result = await response.json();
+                } catch (error) {
+                    console.error('[MoveToList] Bad response:', error);
+                }
+            }
+
+            for (const id of itemIds) {
+                const el = document.getElementById(`item-${id}`);
+                if (el) {
+                    Alpine.destroyTree(el);
+                    el.remove();
+                }
+                if (this.offlineStorageReady) {
+                    await window.offlineStorage.removeItemFromCache(parseInt(id));
+                }
+            }
+
+            sections.forEach(sectionId => {
+                const section = document.getElementById(`section-${sectionId}`);
+                if (section) {
+                    this.updateSectionCounter(section);
+                    this.updateCompletedCount(section);
+                    this.updateCompletedVisibility(section);
+                }
+            });
+
+            this.refreshStats();
+
+            if (response.offline) {
+                window.Toast.show(t('list.moved_pending', { list: toListName }), 'warning');
+                return;
+            }
+
+            const moved = result?.moved || 0;
+            const merged = result?.merged || 0;
+            const list = result?.list?.name || toListName;
+            const parts = [];
+            if (moved > 0) {
+                parts.push(t(moved === 1 ? 'list.moved_to' : 'list.moved_to_plural', { count: moved, list }));
+            }
+            if (merged > 0) {
+                parts.push(t(merged === 1 ? 'list.moved_merged' : 'list.moved_merged_plural', { count: merged, list }));
+            }
+            if (parts.length) {
+                window.Toast.show(parts.join('. '), 'success');
             }
         },
 

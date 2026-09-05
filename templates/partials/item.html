@@ -78,36 +78,16 @@
             </svg>
         </button>
 
-        <!-- Move to section dropdown -->
-        <div x-data="{ open: false }" class="relative">
-            <button
-                @click="open = !open"
-                class="p-1.5 rounded-md hover:bg-stone-100 dark:hover:bg-stone-700 text-stone-400 dark:text-stone-500 transition-colors"
-                :title="t('actions.move')"
-            >
-                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path>
-                </svg>
-            </button>
-            <div
-                x-show="open"
-                @click.outside="open = false"
-                x-cloak
-                x-transition
-                class="absolute right-0 mt-1 w-40 bg-white dark:bg-stone-800 rounded-lg shadow-xl border border-stone-200 dark:border-stone-700 z-50 py-1"
-            >
-                {{range .Sections}}
-                {{if ne .ID $.Item.SectionID}}
-                <button
-                    @click="open = false; $data.moveItemDesktop({{$.Item.ID}}, {{$.Item.SectionID}}, {{.ID}})"
-                    class="block w-full text-left px-3 py-1.5 text-sm text-stone-600 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-stone-700"
-                >
-                    {{.Name}}
-                </button>
-                {{end}}
-                {{end}}
-            </div>
-        </div>
+        <!-- Move to another list -->
+        <button
+            @click="$data.openMoveToList({{.Item.ID}})"
+            class="p-1.5 rounded-md hover:bg-stone-100 dark:hover:bg-stone-700 text-stone-400 dark:text-stone-500 transition-colors"
+            :title="t('actions.move_to_list')"
+        >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path>
+            </svg>
+        </button>
 
         <!-- Delete -->
         <button

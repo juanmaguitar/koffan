@@ -386,6 +386,87 @@ func MoveItemToSection(c *fiber.Ctx) error {
 	}, "")
 }
 
+// MaxItemsPerMove caps a batch move so a malformed request cannot walk the
+// whole items table inside one transaction.
+const MaxItemsPerMove = 200
+
+// MoveItemsToList moves one or more products to another open list.
+// Form values: item_ids (comma separated) and list_id.
+//
+// One endpoint serves both the single-item menu and the multi-selection bar,
+// which also means the offline queue replays a batch as a single action.
+func MoveItemsToList(c *fiber.Ctx) error {
+	toListID, err := strconv.ParseInt(c.FormValue("list_id"), 10, 64)
+	if err != nil {
+		return sendError(c, 400, "error.invalid_list_id")
+	}
+
+	var itemIDs []int64
+	for _, raw := range strings.Split(c.FormValue("item_ids"), ",") {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			return sendError(c, 400, "error.invalid_id")
+		}
+		itemIDs = append(itemIDs, id)
+	}
+	if len(itemIDs) == 0 {
+		return sendError(c, 400, "error.no_ids")
+	}
+	if len(itemIDs) > MaxItemsPerMove {
+		return sendError(c, 400, "error.too_many_items")
+	}
+
+	target, err := db.GetListByID(toListID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return sendError(c, 404, "error.list_not_found")
+		}
+		return sendError(c, 500, "error.database_error")
+	}
+	// A closed list is the record of a finished trip: nothing new lands there.
+	if target.IsClosed() {
+		return sendError(c, 400, "error.list_closed")
+	}
+
+	result, err := retryOnBusy(3, func() (db.MoveResult, error) {
+		return db.MoveItemsToList(itemIDs, toListID)
+	})
+	if err != nil {
+		log.Printf("MoveItemsToList failed after retries: %v", err)
+		return sendError(c, 500, "error.move_failed")
+	}
+
+	// Every client refreshes both ends: the source section loses the rows and
+	// the target gains them, which is what anyone looking at the other list sees.
+	for _, fromSectionID := range result.FromSectionIDs {
+		BroadcastUpdate("item_moved", map[string]interface{}{
+			"section_id":      result.ToSectionID,
+			"from_section_id": fromSectionID,
+		})
+	}
+	for _, id := range result.MovedIDs {
+		if item, err := db.GetItemByID(id); err == nil && item != nil {
+			NotifyItemWebhook(webhook.EventItemUpdated, item)
+		}
+	}
+
+	c.Set("HX-Trigger-After-Settle", `{"statsRefresh":"true"}`)
+	return c.JSON(fiber.Map{
+		"moved":   result.Moved,
+		"merged":  result.Merged,
+		"skipped": result.Skipped,
+		"list": fiber.Map{
+			"id":   target.ID,
+			"name": target.Name,
+			"icon": target.Icon,
+		},
+	})
+}
+
 // MoveItemUp moves an item up in its section
 func MoveItemUp(c *fiber.Ctx) error {
 	id, err := strconv.ParseInt(c.Params("id"), 10, 64)
