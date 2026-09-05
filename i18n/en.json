@@ -60,7 +60,10 @@
     "sort_alphabetical": "A to Z",
     "sort_alphabetical_desc": "Z to A",
     "search_found": "Found:",
-    "search_no_results": "No results for \"{{query}}\""
+    "search_no_results": "No results for \"{{query}}\"",
+    "select": "Select",
+    "select_all": "All",
+    "selected_count": "{{count}} selected"
   },
   "sections": {
     "title": "Sections",

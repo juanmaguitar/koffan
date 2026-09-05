@@ -260,6 +260,10 @@ function shoppingList() {
         showMoveToList: false,
         moveTargetIds: [],
 
+        // Multi-selection, to move several products at once
+        selectionMode: false,
+        selectedItems: [],
+
         // Closing the shopping trip
         showCloseTrip: false,
         carryOver: true,
@@ -1778,6 +1782,42 @@ function shoppingList() {
             }
         },
 
+        // ===== SELECTION MODE =====
+
+        // Picking several products to move them in one go. Selection lives by
+        // id, so it survives a section refresh or a WebSocket update.
+        toggleSelectionMode() {
+            this.selectionMode ? this.exitSelectionMode() : (this.selectionMode = true);
+        },
+
+        exitSelectionMode() {
+            this.selectionMode = false;
+            this.selectedItems = [];
+        },
+
+        isSelected(itemId) {
+            return this.selectedItems.includes(parseInt(itemId));
+        },
+
+        toggleSelection(itemId) {
+            const id = parseInt(itemId);
+            const at = this.selectedItems.indexOf(id);
+            if (at === -1) {
+                this.selectedItems.push(id);
+            } else {
+                this.selectedItems.splice(at, 1);
+            }
+        },
+
+        // Only the products still to buy: bought rows have no move action
+        // either, and moving them is not what a shopping trip needs.
+        selectAllPending() {
+            const ids = [...document.querySelectorAll('.active-items > div[id^="item-"]')]
+                .map(el => parseInt(el.dataset.itemId))
+                .filter(id => !isNaN(id));
+            this.selectedItems = this.selectedItems.length === ids.length ? [] : ids;
+        },
+
         // ===== MOVE TO ANOTHER LIST =====
 
         // Opens the target picker for one product (item menu) or for a
@@ -1803,6 +1843,7 @@ function shoppingList() {
         async moveItemsToList(toListId, toListName) {
             const itemIds = this.moveTargetIds.slice();
             this.closeMoveToList();
+            this.exitSelectionMode();
             if (!itemIds.length) return;
 
             const sections = new Set();

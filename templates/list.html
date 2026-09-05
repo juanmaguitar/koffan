@@ -260,7 +260,7 @@
     </div>
 
     <!-- Mobile add bar: pinned above the keyboard, type + Enter, focus never leaves -->
-    <div class="md:hidden fixed left-0 right-0 z-40 keyboard-anchored bg-white dark:bg-stone-800 border-t border-stone-200 dark:border-stone-700 shadow-[0_-2px_12px_rgba(0,0,0,0.06)] dark:shadow-[0_-2px_12px_rgba(0,0,0,0.4)]">
+    <div x-show="!selectionMode" class="md:hidden fixed left-0 right-0 z-40 keyboard-anchored bg-white dark:bg-stone-800 border-t border-stone-200 dark:border-stone-700 shadow-[0_-2px_12px_rgba(0,0,0,0.06)] dark:shadow-[0_-2px_12px_rgba(0,0,0,0.4)]">
         <form
             id="mobile-add-bar"
             @submit.prevent="$data.submitAddItemForm($el)"
@@ -302,6 +302,27 @@
         </form>
     </div>
 
+
+    <!-- Selection bar: what to do with the products picked -->
+    <div x-show="selectionMode" x-cloak
+        @keydown.escape.window="if (!showMoveToList) exitSelectionMode()"
+        class="fixed left-0 right-0 bottom-0 z-40 bg-white dark:bg-stone-800 border-t border-stone-200 dark:border-stone-700 shadow-[0_-2px_12px_rgba(0,0,0,0.06)] dark:shadow-[0_-2px_12px_rgba(0,0,0,0.4)]">
+        <div class="container mx-auto max-w-4xl px-4 py-3 flex items-center gap-3">
+            <button type="button" @click="selectAllPending()"
+                class="text-sm font-medium text-stone-500 dark:text-stone-400 hover:text-pink-500 transition-colors flex-shrink-0"
+                x-text="t('items.select_all')"></button>
+            <span class="text-sm text-stone-500 dark:text-stone-400 flex-1 truncate"
+                x-text="t('items.selected_count', { count: selectedItems.length })"></span>
+            <button type="button" @click="openMoveToList(selectedItems)"
+                :disabled="selectedItems.length === 0"
+                :class="selectedItems.length === 0 ? 'opacity-40 cursor-not-allowed' : 'hover:bg-pink-500 active:scale-95'"
+                class="px-4 py-2 rounded-xl bg-pink-400 text-white text-sm font-medium transition-all flex-shrink-0"
+                x-text="t('actions.move_to_list')"></button>
+            <button type="button" @click="exitSelectionMode()"
+                class="px-3 py-2 rounded-xl bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300 text-sm font-medium flex-shrink-0"
+                x-text="t('common.cancel')"></button>
+        </div>
+    </div>
 
     <!-- Mobile Action Modal -->
     <div x-show="mobileActionItem" x-cloak class="fixed inset-0 z-50 flex items-end justify-center md:hidden">
