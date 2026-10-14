@@ -1,3 +1,12 @@
+# CSS stage: compila Tailwind una vez, en vez del runtime en el navegador
+FROM node:20-alpine AS css
+
+WORKDIR /app
+COPY tailwind.config.js ./
+COPY templates ./templates
+COPY static ./static
+RUN npx --yes tailwindcss@3.4.1 -c tailwind.config.js -o static/app.css -m
+
 # Build stage
 FROM golang:1.21-alpine AS builder
 
@@ -12,6 +21,7 @@ RUN go mod download
 
 # Copy source code
 COPY . .
+COPY --from=css /app/static/app.css ./static/app.css
 
 # Read version and build with ldflags
 RUN VERSION=$(cat VERSION | tr -d '\n') && \

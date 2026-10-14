@@ -26,3 +26,6 @@ Thumbs.db
 CLAUDE.md
 shopping-list-go
 docs/superpowers/
+
+# Tailwind compilado (Dockerfile o npx tailwindcss)
+static/app.css
