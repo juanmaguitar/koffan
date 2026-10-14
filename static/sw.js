@@ -20,7 +20,7 @@ const STATIC_ASSETS = [
     '/static/favicon.ico',
     '/static/favicon-96.png',
     '/static/apple-touch-icon.png',
-    '/static/tailwind.min.js?v=__ASSET_HASH__',
+    '/static/app.css?v=__ASSET_HASH__',
     '/static/htmx.min.js?v=__ASSET_HASH__',
     '/static/htmx-ws.js?v=__ASSET_HASH__',
     '/static/alpine-collapse.min.js?v=__ASSET_HASH__',

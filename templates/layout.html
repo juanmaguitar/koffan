@@ -134,21 +134,8 @@
         });
     </script>
 
-    <!-- Tailwind CSS -->
-    <script src="{{asset "tailwind.min.js"}}"></script>
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        primary: '#f9a8d4',
-                        uncertain: '#fef3c7',
-                    }
-                }
-            }
-        }
-    </script>
+    <!-- Tailwind CSS (compilado en build, ver tailwind.config.js) -->
+    <link rel="stylesheet" href="{{asset "app.css"}}">
 
     <!-- HTMX -->
     <script src="{{asset "htmx.min.js"}}"></script>
